@@ -81,16 +81,14 @@ export function buildEgg(){
         if(P.arc>0)cx.arc(cxp,cyp+.045*SC,.1*SC,Math.PI*1.12,Math.PI*1.88);else cx.arc(cxp,cyp-.05*SC,.1*SC,Math.PI*.12,Math.PI*.88);
         cx.stroke();cx.restore()}
     }
-    // mouth: dark opening below the beak (wide smile when speaking / laughing)
+    // mouth: dark opening (wide smile when speaking / laughing) (wide smile when speaking / laughing)
     const mo=clamp(P.mo,0,1),y0=1.822;
     if(mo>.05){const hw=(.12+.12*mo)*(1+.15*Math.max(0,P.sm)),cr=.035*P.sm,dep=.05+.19*mo;
       cx.fillStyle='#3c1510';cx.beginPath();cx.moveTo(px(-hw),py(y0+cr));cx.quadraticCurveTo(px(0),py(y0-dep*2),px(hw),py(y0+cr));cx.quadraticCurveTo(px(0),py(y0+.012),px(-hw),py(y0+cr));cx.closePath();cx.fill();
       if(mo>.5){cx.save();cx.clip();cx.fillStyle='#d8656c';cx.beginPath();cx.ellipse(px(0),py(y0-dep*1.05),hw*.55*SC,.05*SC,0,0,Math.PI*2);cx.fill();cx.restore()}}
-    // the beak: a flat, thin tan lip with a darker lower edge, painted on the surface (lifts a little as the mouth opens)
-    {const yb=1.838+mo*.03,hw=.215,tip=yb+.006+P.sm*.012,low=yb-.034+P.sm*.004;
-     const g2=cx.createLinearGradient(0,py(yb+.03),0,py(low));g2.addColorStop(0,'#f6d472');g2.addColorStop(1,'#d9a64e');
-     cx.fillStyle=g2;cx.beginPath();cx.moveTo(px(-hw),py(tip));cx.quadraticCurveTo(px(0),py(yb+.075),px(hw),py(tip));cx.quadraticCurveTo(px(0),py(low-.02),px(-hw),py(tip));cx.closePath();cx.fill();
-     cx.strokeStyle='rgba(125,75,15,.85)';cx.lineWidth=3;cx.lineCap='round';cx.beginPath();cx.moveTo(px(-hw),py(tip));cx.quadraticCurveTo(px(0),py(low-.02),px(hw),py(tip));cx.stroke()}
+    // closed mouth: a thin soft smile (no beak)
+    else{const sm=P.sm,fr=Math.max(0,-sm),hw=.13;cx.strokeStyle='#7a4a12';cx.lineWidth=3;cx.lineCap='round';cx.beginPath();
+      for(let i=0;i<=20;i++){const x=-hw+2*hw*i/20,t=(x/hw)**2,y=sm>=0?y0+.03+(-sm*.035)*(1-t):y0+.03+fr*.035*(1-t);i?cx.lineTo(px(x),py(y)):cx.moveTo(px(x),py(y))}cx.stroke()}
     tex.needsUpdate=true;
   }
   paint({u:.08,l:0,sl:0,arc:0,mo:0,sm:.5,bl:0,lx:0,ly:0});
@@ -104,5 +102,5 @@ export function buildEgg(){
 
   const anchors={head:[inner,[0,2.3,.6]],mouth:[inner,[0,1.82,1.1]],belly:[inner,[0,1.0,1.2]],feet:[group,[0,.1,.4]],top:[inner,[0,H+.3,.1]]};
   const prof=y=>{const r=ringR(clamp(y,.02,H-.02));return{rx:r,zf:r,zb:-r}};
-  return{group,uniforms,colliders:[hit],regionOf,pose,paint,anchors,hipY:CY,prof};
+  return{group,uniforms,colliders:[hit],regionOf,pose,paint,anchors,hipY:CY,prof,patch,patchKey:'egg'};
 }

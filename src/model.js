@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {skinTextures,skinMaterial,patchUV} from './skin.js';
+import {skinGarment} from './garments.js';
 
 /* Loads the supplied rigged 奶蛙 model (exported from the FBX by tools: baked to y-up, 3.1 tall, feet at y=0,
    Mixamo-style skeleton) and drives it procedurally with world-axis rotation deltas. */
@@ -62,14 +63,20 @@ export function buildFrog(variant={}){
    P.needsUpdate=N.needsUpdate=true;}
   PREP=geo.clone();}
 
-  /* ---- torso profile for clothes: per height, half-width and front/back depth of the torso-weighted vertices (arms excluded) ---- */
+  /* ---- torso profile for clothes: per height, half-width and front/back depth of the TORSO surface (vertices near the arms are skipped,
+     so clothes hug the body instead of swallowing the arms) ---- */
   const prof=(()=>{
-    const nm=M.bones.map(b=>b.n),isT=i=>/^(Hips|Spine|Spine1|Spine2)$/.test(nm[i]),P=geo.attributes.position,SI=geo.attributes.skinIndex.array,SW=geo.attributes.skinWeight.array;
-    const N=70,D=.04,Y0=.4,mx=new Float32Array(N),zf=new Float32Array(N).fill(-9),zb=new Float32Array(N).fill(9);
-    for(let v=0;v<P.count;v++){let best=-1,bw=0;for(let j=0;j<4;j++)if(SW[v*4+j]>bw){bw=SW[v*4+j];best=SI[v*4+j]}if(!isT(best))continue;
-      const b=Math.round((P.getY(v)-Y0)/D);if(b<0||b>=N)continue;const x=Math.abs(P.getX(v)),z=P.getZ(v);mx[b]=Math.max(mx[b],x);if(x<.35){zf[b]=Math.max(zf[b],z);zb[b]=Math.min(zb[b],z)}}
-    for(let it=0;it<N;it++)for(let b=0;b<N;b++){if(zf[b]<-8){const a=b>0?zf[b-1]:-9,c=b<N-1?zf[b+1]:-9;if(a>-8||c>-8){zf[b]=a>-8&&c>-8?(a+c)/2:Math.max(a,c);zb[b]=(b>0&&zb[b-1]<8&&b<N-1&&zb[b+1]<8)?(zb[b-1]+zb[b+1])/2:(zb[b-1]<8?zb[b-1]:zb[b+1])}}if(mx[b]===0){const a=b>0?mx[b-1]:0,c=b<N-1?mx[b+1]:0;if(a||c)mx[b]=a&&c?(a+c)/2:Math.max(a,c)}}
-    for(let b=0;b<N;b++){const y=Y0+b*D,e=1.02*Math.sqrt(Math.max(0,1-((y-1.45)/.95)**2))*Math.min(1,Math.max(0,(y-1.0)/.4));mx[b]=Math.max(mx[b],e)}   // flank vertices are weighted to the arms: never narrower than the belly ellipse
+    const P=geo.attributes.position,N=70,D=.04,Y0=.4,mx=new Float32Array(N).fill(-1),zf=new Float32Array(N).fill(-9),zb=new Float32Array(N).fill(9);
+    // rest-pose arm centre lines (shoulder, elbow, wrist, fingertip), mirrored for the other side
+    const arm=[[.63,2.05,.01],[.75,1.93,.02],[1.01,1.83,.07],[1.29,1.74,.12]];
+    const dArm=(x,y,z)=>{let best=9;for(const s of[-1,1])for(let i=0;i<3;i++){const a=arm[i],b=arm[i+1],ax=s*a[0],bx=s*b[0],abx=bx-ax,aby=b[1]-a[1],abz=b[2]-a[2],L2=abx*abx+aby*aby+abz*abz,t=Math.max(0,Math.min(1,((x-ax)*abx+(y-a[1])*aby+(z-a[2])*abz)/L2)),
+      d=Math.hypot(x-(ax+abx*t),y-(a[1]+aby*t),z-(a[2]+abz*t));if(d<best)best=d}return best};
+    for(let v=0;v<P.count;v++){const x=P.getX(v),y=P.getY(v),z=P.getZ(v),b=Math.round((y-Y0)/D);if(b<0||b>=N)continue;
+      if(dArm(x,y,z)<.36)continue;const ax=Math.abs(x);mx[b]=Math.max(mx[b],ax);if(ax<.35){zf[b]=Math.max(zf[b],z);zb[b]=Math.min(zb[b],z)}}
+    for(let it=0;it<N;it++)for(let b=0;b<N;b++){
+      if(zf[b]<-8){const a=b>0?zf[b-1]:-9,c=b<N-1?zf[b+1]:-9;if(a>-8||c>-8){zf[b]=a>-8&&c>-8?(a+c)/2:Math.max(a,c);const p=b>0&&zb[b-1]<8?zb[b-1]:9,q=b<N-1&&zb[b+1]<8?zb[b+1]:9;zb[b]=p<8&&q<8?(p+q)/2:Math.min(p,q)}}
+      if(mx[b]<0){const a=b>0?mx[b-1]:-1,c=b<N-1?mx[b+1]:-1;if(a>=0||c>=0)mx[b]=a>=0&&c>=0?(a+c)/2:Math.max(a,c)}}
+    for(let b=0;b<N;b++){const y=Y0+b*D,e=.92*Math.sqrt(Math.max(0,1-((y-1.45)/.95)**2))*Math.min(1,Math.max(0,(y-1.0)/.4));mx[b]=Math.max(mx[b],e)}   // never narrower than the belly ellipse
     for(let p=0;p<3;p++)for(const A of[mx,zf,zb]){const c=Float32Array.from(A);for(let b=1;b<N-1;b++)A[b]=(c[b-1]+2*c[b]+c[b+1])/4}
     return y=>{const f=clamp((y-Y0)/D,0,N-1.001),i=Math.floor(f),t=f-i;return{rx:lerp(mx[i],mx[i+1],t),zf:lerp(zf[i],zf[i+1],t),zb:lerp(zb[i],zb[i+1],t)}};
   })();
@@ -196,6 +203,7 @@ export function buildFrog(variant={}){
     }
     return v;
   }
+  let armPad=0;
   function pose(P){
     D.fill(null);
     const L=P.lean,T=P.tilt;
@@ -219,7 +227,7 @@ export function buildFrog(variant={}){
     _v.set(0,P.dy,0).applyQuaternion(_pw.copy(pq).invert());bones[hi].position.add(_v);
     group.updateMatrixWorld(true);
     bc.copy(bellyLocal).applyMatrix4(bones[idx.Spine1].matrixWorld);
-    const R=BELLY_R+(P.inflate||0);
+    const R=BELLY_R+(P.inflate||0)+armPad;   // clothes: hold the arms out far enough to rest outside the garment
     for(const[s,side,v] of[['Left',1,P.ar],['Right',-1,P.al]]){
       const sv=solveArm(s,side,v,P.fing,R);setArm(s,side,sv,P.fing,armIdx(s));
     }
@@ -310,5 +318,6 @@ export function buildFrog(variant={}){
   }
 
   console.log('model built',geo.attributes.position.count,'verts',(performance.now()-t0|0)+'ms','armPhi',PHI.Left.toFixed(2));
-  return{group,mesh,bones:by,extras,prof,uniforms,surf,faceZ,colliders,face,body,hipY:wp('Hips').y,pose,paint,HEAD:{x:0,y:0,z:0}};
+  const skinG=g=>skinGarment(g,skeleton,n=>idx[n],[['Hips',1.03],['Spine',1.25],['Spine1',1.49],['Spine2',1.76],['Neck',2.08]]);
+  return{group,mesh,bones:by,extras,prof,setArmPad:v=>{armPad=v},patch,patchKey:'frog',skinGarment:skinG,uniforms,surf,faceZ,colliders,face,body,hipY:wp('Hips').y,pose,paint,HEAD:{x:0,y:0,z:0}};
 }

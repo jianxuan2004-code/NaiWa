@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {skinMaterial,patchUV,SKIN_UV,CREAM_UV,onSkinColor} from './skin.js';
+import {skinGarment} from './garments.js';
 
 /* 奶鱼 / 奶猫 / 奶鼠 / 奶屎: smooth clay-toy bodies modelled to the reference pictures (tools/mkpets.mjs turns blended
    signed-distance shapes into meshes). They use the same PBR textures as 奶蛙 and one shared face painter, and expose the same
@@ -13,8 +14,11 @@ function decode(p){
   const Q=u8(p.P,Int16Array),Nn=u8(p.N,Int16Array),U=u8(p.U,Uint16Array),n=Q.length/3,pos=new Float32Array(n*3),nor=new Float32Array(n*3),uv=new Float32Array(n*2);
   for(let v=0;v<n;v++){for(let a=0;a<3;a++){pos[v*3+a]=p.min[a]+(Q[v*3+a]+32768)/65535*p.size[a];nor[v*3+a]=Nn[v*3+a]/32767}uv[v*2]=U[v*2]/65535;uv[v*2+1]=U[v*2+1]/65535}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('normal',new THREE.BufferAttribute(nor,3));g.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+  if(p.SI){const si=u8(p.SI,Uint8Array),sw=u8(p.SW,Uint8Array),W=new Float32Array(sw.length);for(let i=0;i<sw.length;i++)W[i]=sw[i]/255;
+    g.setAttribute('skinIndex',new THREE.BufferAttribute(Uint16Array.from(si),4));g.setAttribute('skinWeight',new THREE.BufferAttribute(W,4))}
   g.setIndex(new THREE.BufferAttribute(u8(p.I,p.idx32?Uint32Array:Uint16Array),1));return g;
 }
+let EARTEX=null;const earTexture=()=>{if(!EARTEX){EARTEX=new THREE.TextureLoader().load(window.ASSETS.earTex);EARTEX.colorSpace=THREE.SRGBColorSpace;EARTEX.anisotropy=4}return EARTEX};
 const tubeGeo=(pts,r,seg=40)=>new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p=>new THREE.Vector3(...p))),seg,r,10);
 const ellGeo=(sx,sy,sz,px,py,pz)=>{const g=new THREE.SphereGeometry(1,24,18);g.scale(sx,sy,sz);g.translate(px,py,pz);return g};
 
@@ -84,13 +88,25 @@ function assemble(name,def){
   pivot.position.y=def.cy;inner.position.y=-def.cy;group.add(pivot);pivot.add(inner);
   const pbr={clearcoat:.2,clearcoatRoughness:.5};
   const parts={},skins=[];
-  const addSkin=(geo,nm)=>{const mat=skinMaterial(tint,true,pbr);mat.onBeforeCompile=patch;const m=new THREE.Mesh(geo,mat);m.frustumCulled=false;inner.add(m);skins.push(m);parts[nm]=m;return m};
-  const addExtra=(geo,color,nm,pivotAt)=>{const mat=color?new THREE.MeshPhysicalMaterial({color,roughness:.55,...pbr}):skinMaterial(tint,true,pbr);
-    const m=new THREE.Mesh(geo,mat);m.frustumCulled=false;let o=m;if(pivotAt){o=new THREE.Group();o.position.set(...pivotAt);m.position.set(-pivotAt[0],-pivotAt[1],-pivotAt[2]);o.add(m)}inner.add(o);if(nm)parts[nm]=o;return o};
+  /* optional skeleton: bones have no rest rotation, so the rest world positions are all that is needed */
+  let rig=null;
+  if(J.rig){
+    const B=J.rig.bones,bones=B.map(b=>{const o=new THREE.Bone();o.name=b.n;return o}),by={};
+    B.forEach((b,i)=>{by[b.n]=bones[i];if(b.p>=0){bones[b.p].add(bones[i]);const q=B[b.p].pos;bones[i].position.set(b.pos[0]-q[0],b.pos[1]-q[1],b.pos[2]-q[2])}else{inner.add(bones[i]);bones[i].position.set(...b.pos)}});
+    group.updateMatrixWorld(true);
+    const skeleton=new THREE.Skeleton(bones),rest=Object.fromEntries(B.map(b=>[b.n,b.pos]));
+    // a frame that follows a bone but whose rest world frame is the identity, so children use absolute rest-pose coordinates
+    const attach=n=>{const o=new THREE.Object3D();o.position.set(-rest[n][0],-rest[n][1],-rest[n][2]);by[n].add(o);return o};
+    rig={bones,by,skeleton,attach,restY:{hips:rest.hips[1]}};
+  }
+  const mk=(geo,mat)=>{if(rig&&geo.attributes.skinIndex){const m=new THREE.SkinnedMesh(geo,mat);m.frustumCulled=false;m.bind(rig.skeleton,new THREE.Matrix4());return m}const m=new THREE.Mesh(geo,mat);m.frustumCulled=false;return m};
+  const addSkin=(geo,nm)=>{const mat=skinMaterial(tint,true,pbr);mat.onBeforeCompile=patch;mat.customProgramCacheKey=()=>'pet'+def.bellyY;const m=mk(geo,mat);m.frustumCulled=false;inner.add(m);skins.push(m);parts[nm]=m;return m};
+  const addExtra=(geo,color,nm,pivotAt,ear)=>{const mat=ear?new THREE.MeshPhysicalMaterial({map:earTexture(),roughness:.55,...pbr}):color?new THREE.MeshPhysicalMaterial({color,roughness:.55,...pbr}):skinMaterial(tint,true,pbr);
+    const m=mk(geo,mat);let o=m;if(pivotAt){o=new THREE.Group();o.position.set(...pivotAt);m.position.set(-pivotAt[0],-pivotAt[1],-pivotAt[2]);o.add(m)}inner.add(o);if(nm)parts[nm]=o;return o};
   for(const p of J.parts){
-    const g=decode(p);if(p.tex!=='flat')patchUV(g,null,p.tex==='cream'?CREAM_UV:SKIN_UV);
+    const g=decode(p);if(p.tex!=='flat'&&p.tex!=='ear')patchUV(g,null,p.tex==='cream'?CREAM_UV:SKIN_UV);
     if(p.kind==='skin'){const m=addSkin(g,p.n);if(p.tex==='cream'){m.material.color.set(0xffffff)}}
-    else addExtra(g,p.tex==='flat'?p.color:null,p.n,p.pivot);
+    else addExtra(g,p.tex==='flat'?p.color:null,p.n,p.pivot,p.tex==='ear');
   }
   if(def.more)def.more({extra:addExtra,tube:(pts,r,seg)=>patchUV(tubeGeo(pts,r,seg)),ell:(...a)=>patchUV(ellGeo(...a))});
   inner.updateMatrixWorld(true);group.updateMatrixWorld(true);
@@ -105,24 +121,29 @@ function assemble(name,def){
   const HW=u8(info.hw,Float32Array),side=y=>{const f=clamp(y/info.hwDy,0,HW.length-2),i=Math.floor(f);return HW[i]+(HW[i+1]-HW[i])*(f-i)};
   const top=info.top,topZ=info.hatZ,hatW=side(top-.22);
   const PF=u8(info.prof.d,Float32Array),prof=y=>{const f=clamp(y/info.prof.dy,0,info.prof.n-1.001),i=Math.floor(f),t=f-i,g=k=>PF[i*3+k]*(1-t)+PF[(i+1)*3+k]*t;return{rx:g(0),zf:g(1),zb:g(2)}};
-  const face=makeFace(inner,surf,{region:def.region,skin:'#f4c93c',eye:def.eye,mouth:def.mouth,iris:def.iris||IRIS},patch);
+  const headF=rig?rig.attach('head'):inner,chestF=rig?rig.attach('chest'):inner,spineF=rig?rig.attach('spine'):inner;
+  const face=makeFace(headF,surf,{region:def.region,skin:'#f4c93c',eye:def.eye,mouth:def.mouth,iris:def.iris||IRIS},patch);
   onSkinColor(c=>{const tc=new THREE.Color(tint),lin=v=>{v/=255;return v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4)},sr=v=>Math.round(255*(v<=.0031308?v*12.92:1.055*Math.pow(v,1/2.4)-.055));
     const t=[tc.r,tc.g,tc.b];face.setSkin('rgb('+c.map((v,i)=>sr(lin(v)*t[i])).join(',')+')')});
   // hit colliders = the body meshes themselves
-  const hm=new THREE.MeshBasicMaterial({visible:false}),colliders=skins.map(s=>{const m=new THREE.Mesh(s.geometry,hm);m.userData.region='body';inner.add(m);return m});
+  const hm=new THREE.MeshBasicMaterial({visible:false}),sph=new THREE.SphereGeometry(1,16,12);
+  const colliders=rig?def.colliders.map(([bone,c,rr])=>{const m=new THREE.Mesh(sph,hm);m.position.set(...c);m.scale.set(...rr);m.userData.region='body';rig.attach(bone).add(m);return m})
+    :skins.map(s=>{const m=new THREE.Mesh(s.geometry,hm);m.userData.region='body';inner.add(m);return m});
   const regionOf=l=>l.y>def.headThr?'head':'belly';
   const fit={hatY:top-.03,hatZ:topZ,hatR:clamp(hatW*.78,.24,.42),eyeY:def.eye.y,eyeX:def.eye.x,eyeR:def.eye.r,neckY:def.neckY,z:surfN,
-    scarf:{y:def.neckY-.12,rx:side(def.neckY-.12)+.025,rz:(def.scarfRz||side(def.neckY-.12))+.025,cz:def.scarfCz||topZ,tube:.085},prof,torso:def.torso,...(def.fit||{})};
+    scarf:{y:def.neckY-.12,rx:side(def.neckY-.12)+.025,rz:(def.scarfRz||side(def.neckY-.12))+.025,cz:def.scarfCz||topZ,tube:.085},prof,torso:def.torso,patch,patchKey:'pet'+def.bellyY,...(def.fit||{})};
   const pose=P=>{
-    const t=performance.now()/1000,sit=P.sit||0;
-    pivot.rotation.set(P.lean*.9+P.nod*.32+sit*.1,P.yaw*.75,P.roll*.9+Math.sin(t*1.5)*def.rock+(P.hip||0)*.1+(def.tilt||0),'YXZ');
-    pivot.position.y=def.cy+(def.float||0)+Math.sin(t*1.6)*(def.bob||0);
+    const t=performance.now()/1000,sit=P.sit||0,k=rig?.35:1;   // with a skeleton the bones do most of the leaning / turning
+    pivot.rotation.set((P.lean*.9+P.nod*.32)*k+sit*.1,P.yaw*.75*k,P.roll*.9*k+Math.sin(t*1.5)*def.rock+(P.hip||0)*.1+(def.tilt||0)*(1-(P.lie||0)),'YXZ');
+    pivot.position.y=def.cy+(def.float||0)*(1-(P.lie||0))+Math.sin(t*1.6)*(def.bob||0);
     inner.scale.y=1-.05*sit;
+    if(rig&&def.rigPose)def.rigPose(P,t,rig.by);
     if(def.anim)def.anim(t,P,parts,{pivot,inner});
   };
   const A=def.anchors;
-  const anchors={head:[inner,A.head],mouth:[inner,[0,def.mouth.y,A.mouthZ]],belly:[inner,A.belly],feet:[group,[0,.1,.4]],top:[inner,[0,top+.3,.1]]};
-  return{group,uniforms,colliders,regionOf,pose,paint:face.paint,anchors,wearFrame:inner,fit,hipY:def.cy,parts};
+  const anchors={head:[headF,A.head],mouth:[headF,[0,def.mouth.y,A.mouthZ]],belly:[spineF,A.belly],feet:[group,[0,.1,.4]],top:[headF,[0,top+.3,.1]]};
+  return{group,uniforms,colliders,regionOf,pose,paint:face.paint,anchors,wearFrame:headF,bodyFrame:rig?inner:chestF,fit,hipY:def.cy,parts,bones:rig&&rig.by,
+    skinGarment:rig&&def.garmentChain?(g=>skinGarment(g,rig.skeleton,n=>rig.bones.findIndex(b=>b.name===n),def.garmentChain)):null};
 }
 
 /* ============================ the four characters ============================ */
@@ -146,19 +167,40 @@ function cat(){
       for(const s of[-1,1]){const e=p['ear'+s],i=p['earIn'+s];if(e)e.rotation.z=-s*tw;if(i)i.rotation.z=-s*tw}}});
 }
 
-/* 奶鼠: pear body, huge round ears, little waving arm, stubby legs, thin curly tail */
+/* 奶鼠: the supplied NaiShu model, now rigged (tools/mkmouse.mjs builds the skeleton and skin weights): spine + neck + head, two 3-bone arms,
+   legs, a 4-bone tail and two 2-bone ears. The game's pose parameters (lean, nod, yaw, roll, arms, hip, lie…) drive the bones.
+   Its eyes and smile are replaced by the animated face decal, which rides on the head bone. */
+const ARM_REST=[-.1,.55,-.15,.05];
 function mouse(){
-  return assemble('mouse',{torso:[.5,2.0],cy:1.45,rock:.03,headThr:2.05,bellyY:1.3,neckY:2.0,
-    eye:{x:.3,y:2.6,r:.2},mouth:{y:2.2,hw:.2},region:{x0:-.85,x1:.85,y0:1.8,y1:3.05,sc:380},
-    anchors:{head:[0,2.6,.7],belly:[0,1.3,1.1],mouthZ:.95},
-    more(h){h.extra(h.tube([[.4,.4,-.85],[.9,.2,-1.2],[1.5,.3,-1.0],[1.75,.85,-.7],[1.55,1.25,-.5]],.045,48),null,'tail',[.4,.4,-.85])},
+  return assemble('mouse',{garmentChain:[['hips',.8],['spine',1.35],['chest',2.0],['neck',2.2]],torso:[.6,2.3],cy:1.7,rock:.03,headThr:2.85,bellyY:1.6,neckY:2.5,
+    iris:['#d9e9b4','#b9d377','#8fba4c','#6e9c2b'],
+    eye:{x:.385,y:3.1,r:.19},mouth:{y:2.76,hw:.26},region:{x0:-.85,x1:.85,y0:2.4,y1:3.5,sc:380},
+    anchors:{head:[0,3.1,.7],belly:[0,1.6,1.0],mouthZ:.6},
+    colliders:[['head',[0,3.0,.05],[.75,.72,.65]],['spine',[0,1.4,0],[1.1,1.3,.95]],['elbow-1',[-1.15,1.66,0],[.5,.32,.3]],['elbow1',[1.15,1.66,0],[.5,.32,.3]],['foot-1',[-.58,.3,.05],[.4,.35,.5]],['foot1',[.58,.3,.05],[.4,.35,.5]]],
+    rigPose(P,t,B){
+      const lie=P.lie||0,ha=P.ha||0,R=(n,x,y,z)=>B[n].rotation.set(x,y,z),br=Math.sin(t*2.1)*.012*(1-.5*lie);
+      B.hips.position.y=.8+(P.dy||0)*.4;
+      R('hips',0,0,(P.tilt||0)*.05);R('spine',(P.lean||0)*.25+br,0,(P.tilt||0)*.15);R('chest',(P.lean||0)*.3+br*1.5,P.yaw*.12,(P.tilt||0)*.15);
+      R('neck',P.nod*.3,P.yaw*.35,P.roll*.25);R('head',P.nod*.55,P.yaw*.5,P.roll*.55);
+      // both arms hang at rest; every ~9 s (and when laughing) the left one lifts, waves, then lowers again
+      const c=t%9,wv=Math.max(ss(0,.5,c)*(1-ss(3.0,3.7,c)),clamp(ha*3,0,1))*(1-lie),al=P.al||ARM_REST;
+      R('shoulder-1',(al[0]-ARM_REST[0])*.5*(1-wv),0,-1.4*wv-(1-wv)*(Math.sin(t*1.3)*.04+ha*.2+(al[1]-ARM_REST[1])*.8)+wv*Math.sin(t*7)*.1);
+      R('elbow-1',(al[2]-ARM_REST[2])*.5*(1-wv),0,-wv*(Math.sin(t*9)*.5+.15)-(1-wv)*Math.sin(t*1.5+1)*.03);
+      R('wrist-1',0,0,-wv*Math.sin(t*9+1)*.35);
+      const ar=P.ar||ARM_REST;
+      R('shoulder1',(ar[0]-ARM_REST[0])*.5,0,Math.sin(t*1.3+1)*.04+ha*.2+(ar[1]-ARM_REST[1])*.8+lie*.3);
+      R('elbow1',(ar[2]-ARM_REST[2])*.5,0,Math.sin(t*1.5)*.03+(ar[3]-ARM_REST[3])*.3);R('wrist1',0,0,0);
+      // legs sway while playing; feet counter-rotate
+      const h=P.hip||0;R('thigh-1',h*.4,0,0);R('thigh1',-h*.4,0,0);R('foot-1',-h*.2,0,0);R('foot1',h*.2,0,0);
+      // tail: a travelling wave, wider when happy
+      for(let i=0;i<4;i++)R('tail'+i,0,Math.sin(t*3.0-i*.8)*(.1+.14*ha)*(1-.5*lie)*(i?1.1:.6),Math.sin(t*1.5+i*.5)*.05);
+      // ears: lazy flop, small twitches, lag behind head turns, droop when asleep
+      for(const s of[-1,1]){const tw=Math.max(0,Math.sin(t*.8+s*1.7))>.96?.14:0;
+        R('earA'+s,0,-P.yaw*.12,-s*(.02+Math.sin(t*1.1+s)*.04+tw+lie*.5)+P.roll*.1);R('earB'+s,0,0,-s*(Math.sin(t*1.1+s-.7)*.1+lie*.4)-P.roll*.15)}
+    },
     anim(t,P,p,o){
-      const look=Math.sin(t*.55)*Math.max(0,Math.sin(t*.19+1))*.5;o.pivot.rotation.y+=look;o.pivot.rotation.z+=look*.05;
-      const c=t%8,w=ss(0,.35,c)*(1-ss(2.2,2.6,c));
-      if(p['arm-1'])p['arm-1'].rotation.z=w*(-2.45+Math.sin(t*9)*.3)+(1-w)*Math.sin(t*1.3)*.03;
-      if(p.arm1)p.arm1.rotation.z=Math.sin(t*1.3+1)*.03+(P.ha||0)*.2;
-      if(p.tail){p.tail.rotation.y=Math.sin(t*1.7)*.22;p.tail.rotation.z=Math.sin(t*1.1)*.06}
-      for(const s of[-1,1]){const tw=Math.max(0,Math.sin(t*.8+s*1.7))>.96?.28:0,r=s*(Math.sin(t*1.1+s)*.04+tw),e=p['ear'+s],i=p['earIn'+s];if(e)e.rotation.y=r;if(i)i.rotation.y=r}}});
+      const look=Math.sin(t*.55)*Math.max(0,Math.sin(t*.19+1))*.5;o.pivot.rotation.y+=look*.5;o.pivot.rotation.z+=look*.02;
+    }});
 }
 
 /* 奶屎: soft-serve swirl — three fat coils with creases and a curled tip, face on the top coil */

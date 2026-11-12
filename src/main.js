@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import {buildFrog} from './model.js';
 import {buildEgg,eggSurfZ} from './egg.js';
 import {SLOTS,ITEMS,ITEM,buildItem,FIT} from './wardrobe.js';
+import {GARMENT_PAD} from './garments.js';
 import {buildOutdoor} from './outdoor.js';
 import {buildPet} from './pets.js';
+import {buildBed,BED} from './bed.js';
+import {buildDecor} from './room.js';
 import './ui.js';
 function init(){
 
@@ -63,7 +66,7 @@ const frameG=new THREE.Group();frameG.position.set(1.1,4.2,WALLZ+.08);scene.add(
 frameG.add(new THREE.Mesh(new THREE.BoxGeometry(1.3,1.3,.1),new THREE.MeshStandardMaterial({color:0x8a5530,roughness:.7})));
 new THREE.TextureLoader().load(window.ASSETS.logo,t=>{t.colorSpace=THREE.SRGBColorSpace;const m=new THREE.Mesh(new THREE.PlaneGeometry(1.12,1.12),new THREE.MeshBasicMaterial({map:t}));m.position.z=.06;frameG.add(m)});
 // lamp
-const lamp=new THREE.Group();lamp.position.set(1.55,0,-1.3);scene.add(lamp);
+const lamp=new THREE.Group();lamp.position.set(1.98,0,-2.0);lamp.scale.setScalar(.85);scene.add(lamp);
 const lampMats=[];
 {const wood=new THREE.MeshStandardMaterial({color:0x8a5530,roughness:.7});
  const base=new THREE.Mesh(new THREE.CylinderGeometry(.28,.32,.1,20),wood);base.position.y=.05;lamp.add(base);
@@ -71,11 +74,13 @@ const lampMats=[];
  const shadeM=new THREE.MeshStandardMaterial({color:0xffe37a,emissive:0xffcc55,emissiveIntensity:.9,roughness:.8,side:THREE.DoubleSide});lampMats.push(shadeM);
  const shade=new THREE.Mesh(new THREE.CylinderGeometry(.28,.5,.62,24,1,true),shadeM);shade.position.y=1.95;lamp.add(shade);
  lamp.traverse(o=>{if(o.isMesh)o.userData.region='lamp'})}
-const lampLight=new THREE.PointLight(0xffd98a,6,9,1.6);lampLight.position.set(1.55,1.9,-1.1);scene.add(lampLight);
+const lampLight=new THREE.PointLight(0xffd98a,6,9,1.6);lampLight.position.set(1.98,1.75,-1.8);scene.add(lampLight);
 // blob shadow
 const shTex=canvasTex(128,128,(g,w,h)=>{const r=g.createRadialGradient(64,64,0,64,64,64);r.addColorStop(0,'rgba(60,30,5,.55)');r.addColorStop(1,'rgba(60,30,5,0)');g.fillStyle=r;g.fillRect(0,0,w,h)});
 const shadow=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:shTex,transparent:true,depthWrite:false}));shadow.rotation.x=-Math.PI/2;shadow.position.y=.02;scene.add(shadow);
-const ROOM=[wall,floor,skirt,rug,winFrame,winDay,winNight,frameG,lamp,lampLight];
+const BEDO=buildBed();scene.add(BEDO.group);
+const DEC=buildDecor({WALLZ,wall,floor,skirt});scene.add(DEC.group);
+const ROOM=[wall,floor,skirt,rug,winFrame,winDay,winNight,frameG,lamp,lampLight,BEDO.group,DEC.group];
 const OD=buildOutdoor();scene.add(OD.root);
 
 /* ================= the 奶蛙 model (seamless skinned mesh, see frog.js) ================= */
@@ -83,8 +88,8 @@ const FRG=buildFrog();scene.add(FRG.group);
 FRG.anchors={head:[FRG.face,[0,3.0,.4]],mouth:[FRG.face,[0,2.73,.5]],belly:[FRG.body,[0,1.4,.9]],feet:[FRG.group,[0,.1,.4]],top:[FRG.face,[0,3.35,.1]]};
 const EGG=buildEgg();scene.add(EGG.group);EGG.group.visible=false;
 FRG.wearFrame=FRG.face;EGG.wearFrame=EGG.anchors.head[0];FIT.frog.z=FRG.faceZ;FIT.egg.z=eggSurfZ;
-FRG.bodyFrame=FRG.body;EGG.bodyFrame=EGG.wearFrame;FIT.frog.prof=FRG.prof;FIT.frog.torso=[.95,2.15];FIT.egg.prof=EGG.prof;FIT.egg.torso=[.3,1.5];
-const PETS={};for(const k of['fish','cat','mouse','poop']){const p=buildPet(k);p.group.visible=false;scene.add(p.group);p.bodyFrame=p.wearFrame;PETS[k]=p;FIT[k]=p.fit}
+FRG.bodyFrame=FRG.group;EGG.bodyFrame=EGG.wearFrame;FIT.frog.prof=FRG.prof;FIT.frog.patch=FRG.patch;FIT.frog.patchKey=FRG.patchKey;FIT.egg.patch=EGG.patch;FIT.egg.patchKey=EGG.patchKey;FIT.frog.torso=[.95,2.15];FIT.egg.prof=EGG.prof;FIT.egg.torso=[.3,1.5];
+const PETS={};for(const k of['fish','cat','mouse','poop']){const p=buildPet(k);p.group.visible=false;scene.add(p.group);p.bodyFrame=p.bodyFrame||p.wearFrame;PETS[k]=p;FIT[k]=p.fit}
 const CH={frog:FRG,egg:EGG,...PETS};
 const CHARS={
   frog:{icon:'🐸',name:'奶蛙'},egg:{icon:'🥚',name:'奶蛋'},
@@ -363,7 +368,8 @@ function applyWear(){
       if(cur&&cur.userData.item===id)continue;
       if(cur){fr.remove(cur);cur.traverse(o=>{if(o.geometry)o.geometry.dispose()})}
       wearObjs[ch][sl.id]=null;
-      if(id&&ITEM[id]){const o=buildItem(id,ch);fr.add(o);wearObjs[ch][sl.id]=o}}}
+      if(id&&ITEM[id]){let o=buildItem(id,ch);if(o.userData.body&&CH[ch].skinGarment)o=CH[ch].skinGarment(o);fr.add(o);wearObjs[ch][sl.id]=o}}}
+  FRG.setArmPad(GARMENT_PAD[S.wear.frog&&S.wear.frog.body]||0);
 }
 function renderWard(){
   wTabs.innerHTML=SLOTS.map(sl=>'<div class="wtab'+(sl.id===wTab?' on':'')+'" data-s="'+sl.id+'">'+sl.name+'</div>').join('');
@@ -555,7 +561,9 @@ try{const c=localStorage.getItem(SAVE_CH);if(c&&CH[c]&&c!=='frog')setChar(c,true
 $('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$('#start').style.display='none';started=true;sfx('level');say(CUR==='egg'?'安~迪！':'哇～你来啦！我是奶蛙！',2600);setExpr('happy',1600);jump(8)});
 
 /* ================= main update ================= */
-let T=0,idleT=rnd(5,9),zT=0,night=S.sleeping?1:0,eyeClose=0;
+let T=0,idleT=rnd(5,9),zT=0,night=S.sleeping?1:0,eyeClose=0,lie=S.sleeping?1:0;
+/* lying on the bed: [half the body length, half the body thickness] per character (the body is rotated 90° about its feet, head to the pillow) */
+const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.95],fish:[1.65,.8,.78],cat:[1.5,1.1,.8],mouse:[1.9,1.15,.75],poop:[1.55,1.2,.72]}; // + a little scale so wide bodies fit the bed
 const sm=(cur,tgt,sp,dt)=>cur+(tgt-cur)*(1-Math.exp(-sp*dt));
 
 function update(dt){
@@ -616,34 +624,39 @@ function update(dt){
   // compose pose
   const breath=Math.sin(T*(S.sleeping?1.1:2.1)),shake=Math.sin(T*30)*A.shake*.05;
   const ph=T*14,pulse=(CL.cur&&CL.cur.k.startsWith('laugh'))?clamp(CL.cur.lv*1.6,0,1):.5+.5*Math.sin(ph),ha=A.ha; // laughing beat
-  const sit=A.sit,sq=SP.sq.v-stretchJ+ha*.07*(pulse-.5);
+  lie=sm(lie,(S.sleeping&&!OUT)?1:0,2.4,dt);const eL=lie*lie*(3-2*lie);
+  const sit=A.sit*(1-eL),sq=SP.sq.v-stretchJ+ha*.07*(pulse-.5);
   const yaw=look.x*.35*(1-.8*sit*(S.sleeping?1:0))+SP.yaw.v;
   const nod=A.nod-look.y*.3+SP.nod.v+(S.sleeping?Math.sin(T*.9)*.1:0)-ha*.1*pulse;
   const lean=A.lean+SP.lean.v+breath*.008+ha*.06*(pulse-.5);
   const tilt=A.tilt+shake*.6+Math.sin(T*.7)*.01;
   frog.scale.set(1+sq*.45+A.puff*.3,1-sq*.5,1+sq*.45+A.puff*.3);
-  frog.position.y=J.y+ha*.08*pulse;
+  const LB=LIE[CUR]||LIE.frog;
+  const sL=1+eL*(LB[2]-1);
+  frog.position.y=J.y+ha*.08*pulse+eL*(BED.top+LB[1]*sL);
   frog.rotation.z=(G?G.lean||0:0)+SP.roll.v*.08+shake+ha*.035*Math.sin(ph*.5)+(playT>0?Math.sin(T*8)*.08:0);
-  frog.rotation.y=(playT>0?Math.sin(T*3)*.5:0)+look.x*.12;
+  frog.rotation.y=((playT>0?Math.sin(T*3)*.5:0)+look.x*.12)*(1-eL);
+  frog.rotation.z+=eL*Math.PI/2;frog.scale.multiplyScalar(sL);
+  if(eL>.001||(!G&&(frog.position.x!==0||frog.position.z!==0))){frog.position.x=eL*(BED.cx+LB[0]*sL);frog.position.z=eL*(BED.z+.05)}
   // skeleton (supplied rigged model, driven with world-axis deltas)
   const sway=Math.sin(T*1.6)*.03;
   const aR=[...A.ar],aL=[...A.al];
   aR[0]+=-lean*.25+sway+ha*.05*Math.sin(ph);aL[0]+=-lean*.25-sway+ha*.05*Math.sin(ph);aR[2]+=breath*.02;aL[2]+=breath*.02;
-  FR.pose({inflate:A.puff+ha*.1,dy:-.62*sit,lean:lean,tilt:tilt*.4,nod:nod,yaw:yaw,roll:tilt*.8+shake,ar:aR,al:aL,fing:A.fing,hip:A.hip+(playT>0?Math.sin(T*10)*.5:0),sit:sit});
+  FR.pose({inflate:A.puff+ha*.1,dy:-.62*sit,lean:lean,tilt:tilt*.4,nod:nod,yaw:yaw,roll:tilt*.8+shake,ar:aR,al:aL,fing:A.fing,hip:A.hip+(playT>0?Math.sin(T*10)*.5:0),sit:sit,lie:eL,ha:ha});
   UN.uInfl.value=A.puff;UN.uBelly.value=.025*breath+(S.hunger<25?.03*Math.sin(T*5):0)+ha*(.05+.07*pulse);
   UN.uDent.value.set(dentPos.x,dentPos.y,dentPos.z,SP.dent.v);
   // face (eyelids, happy-eye arcs, open mouth, blush) is painted onto a skinned decal that hugs the head surface
   {const u=clamp(Math.max(A.u,bl),0,1),l=clamp(Math.max(A.l,bl*.6),0,1),mo=Math.max(0,A.mo*(1-.28*ha*pulse));
    FR.paint({lx:clamp(look.x*.9+A.lx,-1,1),ly:clamp(look.y*.8+A.ly,-1,1),u,l,sl:A.sl,arc:A.arc,mo,sm:A.sm,te:A.te,tg:A.tg,bl:A.bl,pup:A.pup});}
   // shadow
-  const gs=clamp(1-J.y*.18,.4,1);shadow.position.x=frog.position.x;shadow.scale.set(2.8*gs*(1+sq*.3),2.0*gs,1);shadow.material.opacity=.9*gs;
+  const gs=clamp(1-J.y*.18,.4,1);shadow.position.x=frog.position.x;shadow.scale.set(2.8*gs*(1+sq*.3),2.0*gs,1);shadow.material.opacity=.9*gs*(1-eL);
   // night
   night=sm(night,S.sleeping?1:0,3,dt);
   hemi.intensity=lerp(1.0,.55,night);key.intensity=lerp(2.3,.7,night);fill.intensity=lerp(.7,.2,night);rim.intensity=lerp(1.1,.5,night);
   key.color.setRGB(1,lerp(1,.8,night),lerp(1,1.2,night));
   if(OUT)scene.background.setHex(OD.scenes[OUT.k].userData.bg);else scene.background.setRGB(lerp(1,.1,night),lerp(.85,.1,night)*lerp(1,1,0),lerp(.63,.3,night));
   lampLight.intensity=OUT?0:lerp(6,0,night);lampMats[0].emissiveIntensity=lerp(.9,0,night);
-  winNight.material.opacity=night;
+  winNight.material.opacity=night;DEC.setNight(night,T);
   // zzz / bubble / toast / hud
   if(S.sleeping){zT-=dt;if(zT<=0){zT=1.3;fx('💤',1,anchor('head'),.5)}}
   if(bubble&&now()<bubble.until){const a=anchor('top');bubbleEl.style.display='block';bubbleEl.style.left=clamp(a.x,cw*.2,cw*.8)+'px';bubbleEl.style.top=Math.max(a.y-10*(cw/540),cw*.22)+'px'}else bubbleEl.style.display='none';

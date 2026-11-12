@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {GARMENTS,buildGarment} from './garments.js';
+import {GARMENTS,buildGarment,finishGarment} from './garments.js';
 
 /* 换装: little procedural accessories (no external assets). Every item is built in the head frame of the character,
    sized by a per-character "fit" table, and attached to that frame by the game. */
@@ -49,7 +49,7 @@ function surfFrame(f,x,y,gap){const z=f.z,e=.02,z0=z(x,y),dzx=(z(x+e,y)-z(x-e,y)
 const heart=()=>{const s=new THREE.Shape();s.moveTo(0,-.5);s.bezierCurveTo(-.15,-.35,-.55,-.1,-.55,.2);s.bezierCurveTo(-.55,.5,-.15,.55,0,.3);s.bezierCurveTo(.15,.55,.55,.5,.55,.2);s.bezierCurveTo(.55,-.1,.15,-.35,0,-.5);return s};
 
 export function buildItem(id,ch){
-  if(ITEM[id]&&ITEM[id].slot==='body')return buildGarment(id,FIT[ch]);
+  if(ITEM[id]&&ITEM[id].slot==='body')return finishGarment(buildGarment(id,FIT[ch]),FIT[ch]);
   const f=FIT[ch],g=new THREE.Group(),R=f.hatR;
   g.userData.item=id;
   switch(id){

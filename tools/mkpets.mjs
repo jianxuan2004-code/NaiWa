@@ -161,6 +161,7 @@ function info(name,parts){
 const want=process.argv[2];
 for(const name of Object.keys(defs)){
   if(want&&want!==name)continue;
+  if(name==='mouse'&&!want)continue;   // 奶鼠 now comes from the supplied model: tools/mkmouse.mjs
   console.log(name);const raw=defs[name](),inf=info(name,raw),parts=raw.map(pack);
   fs.writeFileSync(path.join(OUT,name+'.json'),JSON.stringify({parts,info:inf}));
 }

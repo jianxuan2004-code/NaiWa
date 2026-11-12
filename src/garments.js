@@ -44,6 +44,49 @@ const knit=(c1,c2)=>canvasTex(128,128,(x,w,h)=>{x.fillStyle=c1;x.fillRect(0,0,w,
 const stripes=(c1,c2)=>canvasTex(64,128,(x,w,h)=>{x.fillStyle=c1;x.fillRect(0,0,w,h);x.fillStyle=c2;x.fillRect(0,h*.5,w,h*.5)},1,7);
 const dots=(c1,c2)=>canvasTex(96,96,(x,w,h)=>{x.fillStyle=c1;x.fillRect(0,0,w,h);x.fillStyle=c2;for(const[a,b]of[[24,24],[72,72],[72,0],[0,72],[24,96],[96,24]]){x.beginPath();x.arc(a,b,9,0,7);x.fill()}},6,4);
 
+/* Clothes must move with the body they cover. Every garment is baked into absolute character coordinates, gets an outward
+   direction per vertex (aRad) and reuses the character's own body-deformation shader (puff / belly breathing / poke dents),
+   pushing along aRad so shells, belts and collars all stay just outside the skin. Rigged characters additionally skin the
+   garment to their skeleton (skinGarment). */
+export function finishGarment(g,f){
+  g.updateMatrixWorld(true);
+  const out=new THREE.Group();out.userData.item=g.userData.item;out.userData.body=true;
+  const [T0,T1]=f.torso,kx=f.kx||1,kz=f.kz||1,P=y=>{const p=f.prof(clamp(y,T0,T1));return{zf:p.zf*kz,zb:p.zb*kz}};
+  let patch=null;
+  if(f.patch){patch=sh=>{f.patch(sh);const k='#include <skinning_vertex>',i=sh.vertexShader.indexOf(k);
+    sh.vertexShader=sh.vertexShader.slice(0,i+k.length)+sh.vertexShader.slice(i+k.length).replace(/objectNormal/g,'aRad');   // displace along aRad, not the shading normal
+    sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute vec3 aRad;')}}
+  const done=new Set();
+  g.traverse(o=>{
+    if(!o.isMesh)return;
+    const geo=o.geometry.clone();geo.applyMatrix4(o.matrixWorld);
+    const pos=geo.attributes.position,rad=new Float32Array(pos.count*3);
+    for(let v=0;v<pos.count;v++){const p=P(pos.getY(v)),cz=(p.zf+p.zb)/2,dx=pos.getX(v),dz=pos.getZ(v)-cz,l=Math.hypot(dx,dz);
+      if(l<1e-3){rad[v*3+2]=1}else{rad[v*3]=dx/l;rad[v*3+2]=dz/l}}
+    geo.setAttribute('aRad',new THREE.BufferAttribute(rad,3));
+    const m=new THREE.Mesh(geo,o.material);m.frustumCulled=false;out.add(m);
+    if(patch&&!done.has(o.material)){done.add(o.material);o.material.onBeforeCompile=patch;const key='g-'+f.patchKey;o.material.customProgramCacheKey=()=>key}
+  });
+  return out;
+}
+/* skin a finished garment to a skeleton: bones are blended along the torso chain by height */
+export function skinGarment(g,skeleton,boneIndex,chain){
+  const out=new THREE.Group();out.userData=g.userData;
+  for(const o of g.children){
+    const geo=o.geometry,pos=geo.attributes.position,n=pos.count,si=new Uint16Array(n*4),sw=new Float32Array(n*4),last=chain.length-1;
+    for(let v=0;v<n;v++){const y=pos.getY(v);
+      if(y<=chain[0][1]){si[v*4]=boneIndex(chain[0][0]);sw[v*4]=1}
+      else if(y>=chain[last][1]){si[v*4]=boneIndex(chain[last][0]);sw[v*4]=1}
+      else{let i=0;while(y>chain[i+1][1])i++;const t0=(y-chain[i][1])/(chain[i+1][1]-chain[i][1]),t=t0*t0*(3-2*t0);
+        si[v*4]=boneIndex(chain[i][0]);si[v*4+1]=boneIndex(chain[i+1][0]);sw[v*4]=1-t;sw[v*4+1]=t}}
+    geo.setAttribute('skinIndex',new THREE.BufferAttribute(si,4));geo.setAttribute('skinWeight',new THREE.BufferAttribute(sw,4));
+    const m=new THREE.SkinnedMesh(geo,o.material);m.frustumCulled=false;m.bind(skeleton,new THREE.Matrix4());out.add(m);
+  }
+  return out;
+}
+
+/* how far the frog's arms must be held away from its belly to rest outside each garment */
+export const GARMENT_PAD={tee:.09,stripe:.09,sweater:.15,overall:.11,dress:.2,apron:.09,rain:.15,cape:.04,swim:.22,wings:0};
 export const GARMENTS=[
   {id:'tee',    slot:'body',name:'小背心',  icon:'👕', price:12},
   {id:'stripe', slot:'body',name:'条纹衫',  icon:'🎽', price:16},
