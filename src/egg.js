@@ -9,6 +9,7 @@ const H=2.7,Hh=H/2,R=1.17,K=.17,CY=1.25;           // height, half height, max r
 const SKIN='#ffe583',BEAK='#fbd96e';
 const ringR=y=>{const t=y/Hh-1;return R*Math.sqrt(Math.max(0,1-t*t))*(1-K*t)}; // body radius at height y
 const surfZ=(x,y)=>Math.sqrt(Math.max(0,ringR(y)**2-x*x));
+export const eggSurfZ=surfZ;
 
 export function buildEgg(){
   /* ---- body ---- */

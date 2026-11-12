@@ -231,7 +231,7 @@ export function buildFrog(){
   const px=x=>(x-DX0)*SC,py=y=>(DY1-y)*SC;
   const EYE={x:.2,y:2.85,r:.115};
   function paint(P){
-    const key=[P.u,P.l,P.sl,P.arc,P.mo,P.sm,P.te,P.tg,P.bl,P.lx,P.ly].map(v=>Math.round(v*60)).join(',');if(key===lastKey)return;lastKey=key;
+    const key=[P.u,P.l,P.sl,P.arc,P.mo,P.sm,P.te,P.tg,P.bl,P.lx,P.ly,P.pup||1].map(v=>Math.round(v*60)).join(',');if(key===lastKey)return;lastKey=key;
     cx.clearRect(0,0,CW,CH);
     // cover the painted eyes + mouth with skin so nothing static is left behind; we draw our own
     const rgba=(c,a)=>'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')';
@@ -244,12 +244,14 @@ export function buildFrog(){
     for(const s of[-1,1]){const ex=s*.2+P.lx*.016,ey=2.85+P.ly*.013,K=1.06,R=.088;
       cx.save();cx.translate(px(s*.2),py(2.85));cx.scale(1,K);
       {const g=cx.createRadialGradient(0,0,.045*SC,0,0,R*SC);g.addColorStop(0,'#8fd14a');g.addColorStop(.8,'#74c23c');g.addColorStop(1,'#4f9a2c');cx.fillStyle=g}
-      cx.beginPath();cx.arc(0,0,R*SC,0,Math.PI*2);cx.fill();cx.restore();
-      cx.save();cx.translate(px(ex),py(ey));cx.scale(1,K);cx.fillStyle='#0a0a0a';cx.beginPath();cx.arc(0,0,.05*SC,0,Math.PI*2);cx.fill();cx.restore();
+      cx.beginPath();cx.arc(0,0,R*SC,0,Math.PI*2);cx.fill();
+      {const an=clamp(P.sl/.4,0,1);if(an>.02){cx.strokeStyle='rgba(55,75,20,'+(.6*an)+')';cx.lineWidth=1.5+2*an;cx.stroke()}} // angry: dark rim around the eye
+      cx.restore();
+      cx.save();cx.translate(px(ex),py(ey));cx.scale(1,K);cx.fillStyle='#0a0a0a';cx.beginPath();cx.arc(0,0,.05*(P.pup||1)*SC,0,Math.PI*2);cx.fill();cx.restore();
     }
     // closed mouth line (replaces the painted one)
-    if(P.mo<=.04){const sm=P.sm;cx.strokeStyle='#5a3a12';cx.lineWidth=3;cx.lineCap='round';cx.beginPath();
-      for(let i=0;i<=16;i++){const x=-.1+.2*i/16;const y=2.7+sm*.012*(x*x)/.01-sm*.008;i?cx.lineTo(px(x),py(y)):cx.moveTo(px(x),py(y))}cx.stroke()}
+    if(P.mo<=.04){const sm=P.sm,fr=Math.max(0,-sm),hw=.1+.018*fr;cx.strokeStyle='#5a3a12';cx.lineWidth=3+.3*fr;cx.lineCap='round';cx.beginPath();
+      for(let i=0;i<=20;i++){const x=-hw+2*hw*i/20;const y=sm>=0?2.7+sm*.012*(x*x)/.01-sm*.008:2.688+fr*.042*(1-(x/hw)**2);i?cx.lineTo(px(x),py(y)):cx.moveTo(px(x),py(y))}cx.stroke()}
     // open mouth
     if(P.mo>.04){
       const mo=P.mo,mw=.11+.13*mo,YMo=2.73,sm=P.sm;
@@ -267,7 +269,7 @@ export function buildFrog(){
       const lid=(from,to)=>{cx.save();cx.translate(px(ex),py(ey));cx.rotate(ang);cx.beginPath();cx.rect(-r*1.6,from,r*3.2,to-from);cx.clip();
         cx.fillStyle=rgba(skin,1);if('filter' in cx)cx.filter='blur(2.5px)';cx.beginPath();cx.arc(0,0,r*1.08,0,Math.PI*2);cx.fill();cx.restore()};
       if(P.u>.03){const yE=-r+2*r*P.u;lid(-r*1.6,yE);
-        cx.save();cx.translate(px(ex),py(ey));cx.rotate(ang);cx.strokeStyle='rgba(110,60,10,'+(.4*Math.min(1,Math.max(0,(P.u-.12)/.25)))+')';cx.lineWidth=1.5;cx.beginPath();const hw=Math.sqrt(Math.max(0,(r*1.08)**2-yE*yE));cx.moveTo(-hw,yE);cx.lineTo(hw,yE);cx.stroke();cx.restore()}
+        cx.save();cx.translate(px(ex),py(ey));cx.rotate(ang);{const a=clamp(P.sl/.4,0,1);cx.strokeStyle='rgba(95,50,8,'+Math.max(.4*Math.min(1,Math.max(0,(P.u-.12)/.25)),.9*a)+')';cx.lineWidth=1.5+2.5*a}cx.beginPath();const hw=Math.sqrt(Math.max(0,(r*1.08)**2-yE*yE));cx.moveTo(-hw,yE);cx.lineTo(hw,yE);cx.stroke();cx.restore()}
       if(P.l>.03){lid(r-2*r*P.l,r*1.6)}
       if(Math.abs(P.arc)>.35&&P.u>.92){
         cx.save();cx.translate(px(ex),py(ey));cx.strokeStyle='#3a1c08';cx.lineWidth=.02*SC;cx.lineCap='round';cx.beginPath();

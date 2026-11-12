@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import {buildFrog} from './model.js';
-import {buildEgg} from './egg.js';
+import {buildEgg,eggSurfZ} from './egg.js';
+import {SLOTS,ITEMS,ITEM,buildItem,FIT} from './wardrobe.js';
+import {buildOutdoor} from './outdoor.js';
+import {buildPet} from './pets.js';
 function init(){
 
 /* ================= helpers ================= */
@@ -71,11 +74,23 @@ const lampLight=new THREE.PointLight(0xffd98a,6,9,1.6);lampLight.position.set(1.
 // blob shadow
 const shTex=canvasTex(128,128,(g,w,h)=>{const r=g.createRadialGradient(64,64,0,64,64,64);r.addColorStop(0,'rgba(60,30,5,.55)');r.addColorStop(1,'rgba(60,30,5,0)');g.fillStyle=r;g.fillRect(0,0,w,h)});
 const shadow=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:shTex,transparent:true,depthWrite:false}));shadow.rotation.x=-Math.PI/2;shadow.position.y=.02;scene.add(shadow);
+const ROOM=[wall,floor,skirt,rug,winFrame,winDay,winNight,frameG,lamp,lampLight];
+const OD=buildOutdoor();scene.add(OD.root);
 
 /* ================= the 奶蛙 model (seamless skinned mesh, see frog.js) ================= */
 const FRG=buildFrog();scene.add(FRG.group);
 FRG.anchors={head:[FRG.face,[0,3.0,.4]],mouth:[FRG.face,[0,2.73,.5]],belly:[FRG.body,[0,1.4,.9]],feet:[FRG.group,[0,.1,.4]],top:[FRG.face,[0,3.35,.1]]};
 const EGG=buildEgg();scene.add(EGG.group);EGG.group.visible=false;
+FRG.wearFrame=FRG.face;EGG.wearFrame=EGG.anchors.head[0];FIT.frog.z=FRG.faceZ;FIT.egg.z=eggSurfZ;
+const PETS={};for(const k of['fish','cat','mouse','poop']){const p=buildPet(k);p.group.visible=false;scene.add(p.group);PETS[k]=p;FIT[k]=p.fit}
+const CH={frog:FRG,egg:EGG,...PETS};
+const CHARS={
+  frog:{icon:'🐸',name:'奶蛙'},egg:{icon:'🥚',name:'奶蛋'},
+  fish:{icon:'🐟',name:'奶鱼',line:'咕噜噜～',voice:'blub',pitch:1.0},
+  cat:{icon:'🐱',name:'奶猫',line:'喵～',voice:'meow',pitch:1.18},
+  mouse:{icon:'🐭',name:'奶鼠',line:'奶鼠奶鼠！',voice:'squeak',clip:'mouse',pitch:1.0},
+  poop:{icon:'💩',name:'奶屎',line:'噗噗～',voice:'poot',pitch:.85},
+};
 // the character currently shown (everything below talks to FR / frog / UN, which setChar() re-points)
 let CUR='frog',FR=FRG,frog=FRG.group,UN=FRG.uniforms,hitMeshes=FRG.colliders;
 
@@ -91,7 +106,7 @@ const EX={
   // 捧腹大笑: eyes squeezed into ^ ^, huge open mouth with teeth+tongue, head thrown back, hands on belly, body bouncing (ha)
   laugh:X({u:1,l:.45,arc:1,sm:1,mo:1,te:1,tg:.7,bl:.3,lean:-.1,nod:-.3,tilt:.04,ha:1,ar:CLUTCH,al:CLUTCH,fing:.7}),
   love:X({u:1,l:.4,arc:1,sm:1,mo:.4,tg:1,bl:.85,tilt:.3,nod:.05,ar:[-.9,-.3,-.5,-.6],al:[-.9,-.3,-.5,-.6],fing:.5}),
-  angry:X({u:.55,sl:.35,sm:-.7,mo:0,bl:.3,puff:.05,lx:.7,ar:[.12,.18,-.1,0],al:[.12,.18,-.1,0],fing:1,nod:.1,lean:.06,shake:.35}),
+  angry:X({u:.28,sl:.58,sm:-1,mo:0,bl:.12,puff:.04,pup:1.1,lx:0,ly:-.1,ar:[.12,.18,-.1,0],al:[.12,.18,-.1,0],fing:1,nod:.14,lean:.05,shake:.18}),
   surprise:X({u:-.05,ew:1.18,pup:.7,sm:0,mo:.5,nod:-.2,lean:-.1,ar:[-.1,.9,-.3,0],al:[-.1,.9,-.3,0],fing:0}),
   confused:X({u:.2,sl:-.5,sm:-.4,mo:.1,tilt:.25,nod:-.05,lx:.8,ar:[-.9,-.1,-1.8,-.3],al:ARM_REST,fing:.2}),
   sad:X({u:.3,sl:-.6,sm:-.9,mo:.1,nod:.25,lean:.12,sit:1,ly:-.3,ar:CLUTCH,al:CLUTCH,pup:1.1,fing:.5}),
@@ -131,10 +146,11 @@ const SAVE='naiwa3d-save-v1';
 S={hunger:70,joy:70,energy:80,coins:20,xp:0,sleeping:false,last:Date.now()};
 try{const t=JSON.parse(localStorage.getItem(SAVE));if(t){Object.assign(S,t);const m=Math.min((Date.now()-S.last)/60000,600);
   S.hunger=clamp(S.hunger-m*.12,15,100);S.joy=clamp(S.joy-m*.08,15,100);S.energy=clamp(S.energy+(S.sleeping?m*.5:-m*.05),10,100)}}catch(e){}
+S.own=Array.isArray(S.own)?S.own:[];S.wear=S.wear||{};for(const k in CH)S.wear[k]=S.wear[k]||{};S.best=S.best||0;
 const save=()=>{S.last=Date.now();try{localStorage.setItem(SAVE,JSON.stringify(S))}catch(e){}};
 setInterval(save,5000);addEventListener('pagehide',save);
 const lv=()=>1+Math.floor(S.xp/60);
-function gainXP(n){const a=lv();S.xp+=n;if(lv()>a){S.coins+=10;say('升级啦 Lv.'+lv()+'！奖励 10 金币',2600);fx('⭐',26,'head');sfx('level')}}
+function gainXP(n){const a=lv();S.xp+=n;if(lv()>a){S.coins+=10;say('升级啦 Lv.'+lv()+'！奖励 10 金币',2600);fx('⭐',26,'head');sfx('level');setTimeout(ola,600)}}
 
 /* ================= audio ================= */
 let AC=null,muted=false,master=null;
@@ -154,7 +170,11 @@ function sfx(n){switch(n){
   case'level':[523,659,784,1047].forEach((f,i)=>tone(f,.2,'triangle',.3,0,i*.1));break;
   case'yawn':tone(420,.7,'sine',.2,-250);break;
   case'jump':tone(300,.25,'triangle',.25,500);break;
-  case'gulp':tone(200,.12,'sine',.35,-80);break;}}
+  case'gulp':tone(200,.12,'sine',.35,-80);break;
+  case'meow':tone(820,.12,'triangle',.3,250);tone(1050,.32,'triangle',.28,-520,.1);break;
+  case'squeak':tone(1900,.07,'square',.1,700);tone(2200,.07,'square',.1,500,.09);break;
+  case'blub':for(let i=0;i<3;i++)tone(260+i*70,.1,'sine',.32,260,i*.11);break;
+  case'poot':tone(160,.22,'sawtooth',.22,-70);noise(.12,.25);break;}}
 /* ---- real voice clips: the frog's laugh (from the supplied videos) ---- */
 const CL={buf:{},cur:null,flip:false,n:0};
 function b64buf(u){const t=atob(u.split(',')[1]),a=new Uint8Array(t.length);for(let i=0;i<t.length;i++)a[i]=t.charCodeAt(i);return a.buffer}
@@ -165,7 +185,7 @@ function playClip(k,rate=1,gain=1.5,chain=null){if(!AC||muted||!CL.buf[k])return
   const c=CL.cur={k,s,an,lv:0,chain};s.onended=()=>{if(CL.cur===c){CL.cur=null;if(c.chain==='sig')signature()}};s.start();return CL.buf[k].duration/rate}
 function giggle(){ // the real laugh; falls back to the synth giggle while the clips are still decoding
   if(CL.cur)return; // don't cut off a laugh or the catchphrase that is already playing
-  CL.n++;CL.flip=!CL.flip;const d=playClip(CL.flip?'laugh1':'laugh2',rnd(.97,1.04),1.5,CL.n%3===0?'sig':null);
+  CL.n++;CL.flip=!CL.flip;const d=playClip(CL.flip?'laugh1':'laugh2',rnd(.97,1.04)*(CHARS[CUR].pitch||1),1.5,CL.n%3===0?'sig':null);
   if(!d){sfx('giggle');return}setExpr('laugh',d*1000+120)}
 function catchphrase(extra='',keep=false){const d=playClip('catch',1,1.6);if(!d){say('嘎嘎提拉虾！'+extra,2200);return}
   if(!keep)setExpr('talk',d*1000+250);say('嘎嘎提拉虾！'+extra,d*1000+900);kick('nod',-4);kick('sq',4);jump(6);fx('✨',6,'head')}
@@ -174,14 +194,21 @@ let lastAndy=0;
 function andy(keep=false){lastAndy=now();const d=playClip('andy',1,1.6);
   bubble={t:'安~迪！',until:now()+(d?d*1000+900:1600)};bubbleEl.textContent='安~迪！';
   if(!d)return;if(!keep)setExpr('happy',d*1000+250);kick('sq',3);kick('roll',now()%2?4:-4);fx('✨',5,'head')}
-function signature(extra='',keep=false){if(CUR==='egg')andy(keep);else catchphrase(extra,keep)}
+function petVoice(keep=false){lastAndy=now();const c=CHARS[CUR];if(c.clip&&CL.buf[c.clip])playClip(c.clip,1,1.6);else sfx(c.voice);bubble={t:c.line,until:now()+1700};bubbleEl.textContent=c.line;
+  if(!keep)setExpr('happy',900);kick('sq',3);kick('roll',now()%2?4:-4);fx('✨',4,'head')}
+/* 哦啦 (from the supplied video): a short exclamation every character can make */
+function ola(){if(CL.cur||!CL.buf.ola)return false;playClip('ola',(CHARS[CUR].pitch||1)*rnd(.97,1.03),1.5);return true}
+function signature(extra='',keep=false){if(CUR==='frog')catchphrase(extra,keep);else if(CUR==='egg')andy(keep);else petVoice(keep)}
+function canSig(){return CUR==='frog'?!!CL.buf.catch:CUR==='egg'?!!CL.buf.andy:true}
 $('#mute').onclick=()=>{audioInit();muted=!muted;if(muted)stopClip();$('#mute').textContent=muted?'🔇':'🔊'};
 
 /* ================= DOM fx ================= */
 const bubbleEl=$('#bubble'),toastEl=$('#toast'),trayEl=$('#tray');
 let bubble=null,toastUntil=0;
 function say(t,ms=2200){
-  if(CUR==='egg'){const laugh=/哈哈|嘻嘻|咯咯|好痒/.test(t);t=laugh?'哈哈哈！':'安~迪！';if(!laugh&&!CL.cur&&now()-lastAndy>1400)andy(true)}
+  if(CUR!=='frog'){const laugh=/哈哈|嘻嘻|咯咯|好痒/.test(t);
+    if(CUR==='egg'){t=laugh?'哈哈哈！':'安~迪！';if(!laugh&&!CL.cur&&now()-lastAndy>1400)andy(true)}
+    else{t=laugh?'哈哈哈！':CHARS[CUR].line;if(!laugh&&!CL.cur&&now()-lastAndy>1400)petVoice(true)}}
   bubble={t,until:now()+ms};bubbleEl.textContent=t}
 function showToast(t,ms=2200){toastEl.textContent=t;toastEl.style.display='block';toastUntil=now()+ms}
 const proj=new THREE.Vector3();
@@ -204,7 +231,7 @@ const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
 function pointerNDC(e){const r=renderer.domElement.getBoundingClientRect();ndc.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1);return{px:e.clientX-r.left,py:e.clientY-r.top}}
 function pick3(){
   ray.setFromCamera(ndc,camera);
-  const hit=ray.intersectObjects([...hitMeshes,...lamp.children],false)[0];
+  const hit=ray.intersectObjects(OUT?[...hitMeshes]:[...hitMeshes,...lamp.children],false)[0];
   if(!hit)return null;
   let region=hit.object.userData.region;
   const local=frog.worldToLocal(hit.point.clone());
@@ -214,7 +241,7 @@ function pick3(){
 let touch=null,rubAcc=0,pokeCount=0,pokeT=0,lastSay=0,started=false;
 const cv=renderer.domElement;
 cv.addEventListener('pointerdown',e=>{
-  e.preventDefault();audioInit();cv.setPointerCapture(e.pointerId);pointerNDC(e);
+  e.preventDefault();audioInit();if(G){if(G.end)endGame();else return}cv.setPointerCapture(e.pointerId);pointerNDC(e);
   const h=pick3();if(!h)return;
   if(h.region==='lamp'){sfx('tap');toggleSleep();return}
   touch={region:h.region,moved:0,t:now(),x:e.clientX,y:e.clientY};
@@ -259,16 +286,21 @@ function onRub(region){
 /* ---- buttons / tray ---- */
 const FOODS=[{e:'🍎',n:'苹果',c:0,v:12},{e:'🥕',n:'胡萝卜',c:2,v:16},{e:'🍔',n:'汉堡',c:4,v:28},{e:'🍰',n:'蛋糕',c:6,v:36},{e:'🍗',n:'鸡腿',c:8,v:48}];
 trayEl.innerHTML=FOODS.map((f,i)=>`<div class="food" data-i="${i}"><b>${f.e}</b>${f.n}<small>${f.c?'🪙'+f.c:'免费'}</small></div>`).join('');
-function closeTray(){trayEl.classList.remove('show')}
+function closeTray(){trayEl.classList.remove('show');wardEl.classList.remove('show');tripEl.classList.remove('show');charPick.classList.remove('show')}
 document.querySelectorAll('.btn').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();audioInit();sfx('tap');
   const id=b.dataset.b;
-  if(id==='feed'){if(S.sleeping)wake();trayEl.classList.toggle('show');return}
-  closeTray();if(id==='sleep')toggleSleep();else if(id==='play')play();else if(id==='talk')startTalk();
+  if(G&&!G.end&&id!=='game')return;
+  if(G&&G.end&&id!=='game')endGame();
+  if(OUT&&(id==='game'||id==='sleep')){sfx('no');showToast(id==='sleep'?'外面不能睡觉，先回家吧':'先回家再玩接接乐吧',2000);return}
+  if(id==='out'){if(OUT){showToast('已经在外面玩啦，点上面的"回家"',2000);return}if(S.sleeping)wake();const o=tripEl.classList.contains('show');closeTray();if(!o){renderTrip();tripEl.classList.add('show')}return}
+  if(id==='feed'){if(S.sleeping)wake();wardEl.classList.remove('show');tripEl.classList.remove('show');trayEl.classList.toggle('show');return}
+  if(id==='dress'){if(S.sleeping)wake();const o=wardEl.classList.contains('show');closeTray();if(!o){renderWard();wardEl.classList.add('show')}return}
+  closeTray();if(id==='sleep')toggleSleep();else if(id==='play')play();else if(id==='talk')startTalk();else if(id==='game')startGame();
 }));
 let playT=0;
 function play(){
   if(S.sleeping)wake();if(S.energy<15){sfx('no');say('好累…想睡觉',1800);return}
-  playT=3.4;setExpr('play',3400);S.energy=clamp(S.energy-10,0,100);S.joy=clamp(S.joy+18,0,100);gainXP(4);fx('⭐',16,'head');jump(8.5);if(CL.buf[CUR==='egg'?'andy':'catch'])signature('一起玩！',true);else{say('一起玩！耶！',2400);sfx('level')}
+  playT=3.4;setExpr('play',3400);S.energy=clamp(S.energy-10,0,100);S.joy=clamp(S.joy+18,0,100);gainXP(4);fx('⭐',16,'head');jump(8.5);if(canSig())signature('一起玩！',true);else{say('一起玩！耶！',2400);sfx('level')}
 }
 /* food dragging */
 const ghost=$('#ghost');let drag=null,eatSeq=null;
@@ -296,7 +328,7 @@ function feed(f,from){
 let mic={},talk={state:'idle'};
 async function startTalk(){
   if(talk.state!=='idle')return;if(S.sleeping)wake();
-  if(CUR==='egg'){andy();return}
+  if(CUR!=='frog'){signature();return}
   try{mic.stream=mic.stream||await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){showToast('需要麦克风权限才能复读哦',2600);return}
   audioInit();if(!AC)return;
   const src=AC.createMediaStreamSource(mic.stream),an=AC.createAnalyser();an.fftSize=1024;src.connect(an);
@@ -316,26 +348,180 @@ function talkUpdate(){
   if(talk.state==='listen'){const m=level(talk.an),t=now();if(m>14){talk.heard=true;talk.lastVoice=t}
     const el=t-talk.t0;if((talk.heard&&t-talk.lastVoice>900)||el>6000||(!talk.heard&&el>4500)){talk.state='stop';exprUntil=0;talk.mr.stop()}}
   else if(talk.state==='speak'){ov.mo=clamp(level(talk.an)/45,0,1)}
-  if(CL.cur){const t=now(),dt=Math.min(.1,(t-(CL.t||t))/1000);CL.t=t;const c=CL.cur,l=clamp(level(c.an)/80,0,1);const sp=c.k==='catch'||c.k==='andy';c.lv+=(l-c.lv)*(1-Math.exp(-(l>c.lv?(sp?22:5):(sp?12:2.2))*dt)); // laugh: slow envelope so the mouth doesn't flutter; speech: faster so syllables read
+  if(CL.cur){const t=now(),dt=Math.min(.1,(t-(CL.t||t))/1000);CL.t=t;const c=CL.cur,l=clamp(level(c.an)/80,0,1);const sp=c.k==='catch'||c.k==='andy'||c.k==='mouse'||c.k==='ola';c.lv+=(l-c.lv)*(1-Math.exp(-(l>c.lv?(sp?22:5):(sp?12:2.2))*dt)); // laugh: slow envelope so the mouth doesn't flutter; speech: faster so syllables read
     ov.mo=sp?clamp(.08+c.lv*1.15,0,1):clamp(.25+c.lv*.95,0,1)}else CL.t=0
 }
 
+/* ================= 换装 wardrobe ================= */
+const wardEl=$('#wardrobe'),wTabs=$('#wtabs'),wItems=$('#witems');let wTab='hat';
+const wearObjs={};for(const k in CH)wearObjs[k]={};
+function applyWear(){
+  for(const ch in CH){const fr=CH[ch].wearFrame;
+    for(const sl of SLOTS){const id=S.wear[ch][sl.id]||null,cur=wearObjs[ch][sl.id];
+      if(cur&&cur.userData.item===id)continue;
+      if(cur){fr.remove(cur);cur.traverse(o=>{if(o.geometry)o.geometry.dispose()})}
+      wearObjs[ch][sl.id]=null;
+      if(id&&ITEM[id]){const o=buildItem(id,ch);fr.add(o);wearObjs[ch][sl.id]=o}}}
+}
+function renderWard(){
+  wTabs.innerHTML=SLOTS.map(sl=>'<div class="wtab'+(sl.id===wTab?' on':'')+'" data-s="'+sl.id+'">'+sl.name+'</div>').join('');
+  const cur=S.wear[CUR][wTab];
+  wItems.innerHTML=ITEMS.filter(i=>i.slot===wTab).map(i=>{const own=S.own.includes(i.id);
+    return '<div class="wit'+(cur===i.id?' on':'')+(!own&&S.coins<i.price?' lock':'')+'" data-i="'+i.id+'"><b>'+i.icon+'</b>'+i.name+'<small>'+(cur===i.id?'穿戴中':own?'已拥有':'🪙'+i.price)+'</small></div>'}).join('')
+    +'<div class="wit'+(!cur?' on':'')+'" data-i=""><b>🚫</b>不戴<small>&nbsp;</small></div>';
+}
+wardEl.addEventListener('pointerdown',e=>{
+  const tab=e.target.closest('.wtab');if(tab){e.preventDefault();wTab=tab.dataset.s;sfx('tap');renderWard();return}
+  const el=e.target.closest('.wit');if(!el)return;audioInit();
+  const id=el.dataset.i,cur=S.wear[CUR][wTab];
+  if(!id){S.wear[CUR][wTab]=null;sfx('tap');applyWear();renderWard();return}
+  const it=ITEM[id];
+  if(!S.own.includes(id)){
+    if(S.coins<it.price){sfx('no');showToast('金币不够啦～多摸摸、多玩接接乐可以赚金币',2400);return}
+    S.coins-=it.price;S.own.push(id);sfx('coin');showToast('买到啦！'+it.icon+' '+it.name,1600)}
+  if(cur===id){S.wear[CUR][wTab]=null;sfx('tap')}
+  else{S.wear[CUR][wTab]=id;sfx('level');if(Math.random()<.5)setTimeout(ola,350);setExpr('happy',1400);jump(6.5);kick('sq',3);fx('✨',8,'head');
+    if(!S.sleeping)say(pick(['好看吗？','新衣服！','嘿嘿～','我是潮蛙！']),1600)}
+  applyWear();renderWard();save();
+});
+applyWear();
+
+/* ================= 接接乐 mini game ================= */
+let G=null;
+const gHud=$('#ghud'),gEnd=$('#gend');
+const GOOD=[['🍎',1],['🍎',1],['🍎',1],['🍔',2],['🍰',2],['🍗',3],['⭐',5]],BAD=[['🌶️',-3],['💣',-4]];
+function startGame(){
+  if(S.sleeping)wake();if(S.energy<10){sfx('no');say('好累…想睡觉',1800);return}
+  gEnd.style.display='none';closeTray();stopClip();
+  G={t:30,score:0,items:[],spawnT:.4,tx:0,mo:0,caught:0,end:false};
+  S.energy=clamp(S.energy-8,0,100);setExpr('happy',800);say('接住好吃的！躲开辣椒和炸弹！',2200);sfx('level');
+  gHud.style.display='block';
+}
+function gameSpawn(){
+  const bad=Math.random()<.22,[e,v]=pick(bad?BAD:GOOD),u=cw/540,el=document.createElement('div');
+  el.className='fx';el.textContent=e;el.style.fontSize='calc(var(--u)*46)';el.style.zIndex=2;stage.appendChild(el);
+  const it={e,v,el,x:rnd(.1,.9)*cw,y:-30*u,vy:rnd(230,330)*(1+.5*(1-G.t/30)),rot:rnd(-1,1)};G.items.push(it);
+}
+function gameUpdate(dt){
+  const u=cw/540;
+  if(!G.end){G.t-=dt;G.spawnT-=dt;if(G.spawnT<=0){gameSpawn();G.spawnT=rnd(.4,.85)*(1-.35*(1-G.t/30))}
+    if(G.t<=0){G.t=0;gameFinish()}}
+  // the pet slides to the pointer
+  const tx=G.end?0:clamp(G.tx*1.9,-1.3,1.3);frog.position.x+=(tx-frog.position.x)*(1-Math.exp(-9*dt));
+  G.lean=sm(G.lean||0,clamp((tx-frog.position.x)*-.35,-.3,.3),10,dt);
+  const m=anchor('mouth');let near=0;
+  for(let i=G.items.length-1;i>=0;i--){const it=G.items[i];it.y+=it.vy*dt*u;
+    it.el.style.left=it.x+'px';it.el.style.top=it.y+'px';it.el.style.transform='translate(-50%,-50%) rotate('+(it.rot*it.y*.01)+'rad)';
+    const dx=Math.abs(it.x-m.x),dy=m.y-it.y;
+    if(!G.end&&dy<200*u&&dy>-20*u&&dx<130*u&&it.v>0)near=Math.max(near,clamp(1-dy/200/u,.2,1));
+    if(!G.end&&dx<(CUR==='egg'?100:82)*u&&Math.abs(dy)<44*u){ // caught
+      G.score=Math.max(0,G.score+it.v);if(it.v>0){G.caught++;sfx('chomp');SP.sq.v=.1;fx('+'+it.v,1,{x:it.x,y:it.y},.3);if(G.caught%4===0)say(pick(['好吃！','再来！','嗯嗯～']),700);if(it.e==='⭐'){sfx('coin');fx('✨',5,'mouth',.5)}}
+      else{sfx('no');setExpr('angry',700);kick('roll',7);fx('💢',2,'mouth',.4);say(pick(['呸呸呸！','好辣！','哎呀！']),800)}
+      it.el.remove();G.items.splice(i,1);continue}
+    if(it.y>ch+40*u){it.el.remove();G.items.splice(i,1)}}
+  G.mo=sm(G.mo,near,14,dt);
+  gHud.textContent='⏱ '+Math.ceil(G.t)+'s   ⭐ '+G.score;
+  if(G.end&&!G.items.length&&Math.abs(frog.position.x)<.02){frog.position.x=0;G.end=2}
+}
+function gameFinish(){
+  G.end=true;for(const it of G.items)it.el.remove();G.items=[];gHud.style.display='none';
+  const coins=Math.floor(G.score/2),newBest=G.score>S.best;if(newBest)S.best=G.score;
+  S.coins+=coins;S.joy=clamp(S.joy+10,0,100);gainXP(Math.min(6,2+Math.floor(G.score/10)));sfx(coins>0?'level':'no');setExpr(G.score>=10?'laugh':'happy',1500);jump(7);
+  if(coins>0&&CL.buf.laugh1)giggle();
+  gEnd.innerHTML='<h2>'+(newBest&&G.score>0?'🎉 新纪录！':'时间到！')+'</h2><p>接到 '+G.score+' 分</p><p>🪙 +'+coins+'　最高 '+S.best+'</p><div class="go2" data-a="again">再玩一次</div>';
+  gEnd.style.display='block';save();
+}
+gEnd.addEventListener('pointerdown',e=>{const b=e.target.closest('.go2');if(b&&b.dataset.a==='ok'){e.preventDefault();gEnd.style.display='none'}else if(b){e.preventDefault();audioInit();G=null;startGame()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&G)endGame()});
+function endGame(){if(!G)return;for(const it of G.items)it.el.remove();G=null;frog.position.x=0;gHud.style.display='none';gEnd.style.display='none'}
+function gamePointer(e){if(!G||G.end)return;const r=cv.getBoundingClientRect();G.tx=clamp((e.clientX-r.left)/r.width*2-1,-1,1)}
+addEventListener('pointermove',gamePointer);addEventListener('pointerdown',gamePointer);
+
+/* ================= 出门玩 outings ================= */
+const tripEl=$('#trip'),homeEl=$('#home'),fadeEl=$('#fade');
+const DEST={
+  park:{name:'公园',icon:'🌳',items:['🌸','🌼','🍄','🌷','🦋','🍀'],lines:['花开啦！','好多蝴蝶～','空气真好！','找到啦！']},
+  beach:{name:'海边',icon:'🏖️',items:['🐚','⭐','🦀','🐠','🐙','🪸'],lines:['海浪好凉～','贝壳！','哇，大海！','抓到啦！']},
+  snow:{name:'雪地',icon:'⛄',items:['❄️','⛄','🧤','🎿','🧊','🎄'],lines:['雪好软！','好冷好好玩～','堆雪人！','找到啦！']},
+};
+const OUT_TIME=45;let OUT=null;
+function renderTrip(){tripEl.innerHTML=Object.entries(DEST).map(([k,d])=>'<div class="dest" data-d="'+k+'"><b>'+d.icon+'</b>'+d.name+'<small>⚡ -10 · '+OUT_TIME+' 秒</small></div>').join('')}
+tripEl.addEventListener('pointerdown',e=>{const el=e.target.closest('.dest');if(!el)return;e.preventDefault();audioInit();goOut(el.dataset.d)});
+function fadeTo(fn){fadeEl.style.opacity=1;setTimeout(()=>{fn();fadeEl.style.opacity=0},380)}
+function goOut(k){
+  if(OUT||G)return;
+  if(S.energy<15){sfx('no');say('好累…先睡一会儿吧',1800);closeTray();return}
+  if(S.hunger<20){sfx('no');say('肚肚饿了…先吃点东西吧',2000);closeTray();return}
+  closeTray();sfx('level');S.energy=clamp(S.energy-10,0,100);
+  fadeTo(()=>{
+    OUT={k,d:DEST[k],t:OUT_TIME,found:0,coins:0,gift:false,giftAt:rnd(10,32),spawnT:.6,els:[],trip:{}};S.trips=(S.trips||0)+1;
+    ROOM.forEach(o=>o.visible=false);OD.scenes[k].visible=true;
+    homeEl.style.display='block';gHud.style.display='block';
+    setExpr('happy',1500);jump(8);fx('✨',8,'head');say(CUR==='egg'?'安~迪！':'出门玩咯！',2000);
+  });
+}
+function goHome(auto){
+  if(!OUT)return;const O=OUT;OUT=null;
+  for(const c of O.els)c.el.remove();
+  fadeTo(()=>{
+    OD.scenes[O.k].visible=false;ROOM.forEach(o=>o.visible=true);homeEl.style.display='none';gHud.style.display='none';
+    S.joy=clamp(S.joy+8+O.found,0,100);gainXP(2+Math.min(6,Math.floor(O.found/3)));S.coins+=O.coins;save();
+    setExpr(O.found>=8?'laugh':'happy',1400);jump(7);if(O.found>=8&&CL.buf.laugh1)giggle();
+    gEnd.innerHTML='<h2>'+(auto?'玩够啦，回家！':'回家啦！')+'</h2><p>'+O.d.icon+' '+O.d.name+'　收集了 '+O.found+' 件</p><p>🪙 +'+O.coins+'　开心 +'+(8+O.found)+'</p><div class="go2" data-a="ok">好的</div>';
+    gEnd.style.display='block';
+  });
+}
+homeEl.addEventListener('pointerdown',e=>{e.preventDefault();goHome(false)});
+function outSpawn(gift){
+  const low=Math.random()<.2,x=low?rnd(.3,.7):(Math.random()<.5?rnd(.1,.25):rnd(.75,.9)),y=low?rnd(.74,.8):rnd(.3,.76);
+  const emoji=gift?'🎁':pick(OUT.d.items),el=document.createElement('div');
+  el.className='col'+(gift?' gift':'');el.innerHTML='<i>'+emoji+'</i>';el.style.left=x*cw+'px';el.style.top=y*ch+'px';if(gift)el.style.fontSize='calc(var(--u)*60)';
+  stage.appendChild(el);
+  const c={el,emoji,gift,x:x*cw,y:y*ch,life:gift?11:rnd(5,8)};
+  el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();collect(c)});
+  OUT.els.push(c);
+}
+function collect(c){
+  if(!OUT)return;const i=OUT.els.indexOf(c);if(i<0)return;OUT.els.splice(i,1);
+  c.el.style.transform='translate(-50%,-50%) scale(1.6)';c.el.style.opacity=0;setTimeout(()=>c.el.remove(),300);
+  OUT.found++;look.wx=(c.x/cw)*2-1;look.wy=-(c.y/ch)*2+1;look.wT=now()+900;
+  if(c.gift){
+    const free=ITEMS.filter(it=>!S.own.includes(it.id));
+    if(free.length){const it=pick(free);S.own.push(it.id);showToast('🎁 获得新饰品：'+it.icon+' '+it.name+'！去换装里看看',3200)}
+    else{OUT.coins+=15;showToast('🎁 礼物里有 15 枚金币！',2400)}
+    sfx('level');setTimeout(ola,300);fx('🎉',8,{x:c.x,y:c.y},1.2);setExpr('happy',1400);jump(8);
+  }else{
+    OUT.coins+=1;sfx('coin');fx('+1🪙',1,{x:c.x,y:c.y},.3);
+    if(OUT.found%3===0){setExpr('happy',900);jump(5.5)}
+    if(OUT.found%4===1&&!S.sleeping)say(pick(OUT.d.lines),1200);
+  }
+}
+function outUpdate(dt){
+  const O=OUT;O.t-=dt;OD.update(O.k,T,dt);
+  O.spawnT-=dt;if(O.spawnT<=0&&O.els.length<5){outSpawn(false);O.spawnT=rnd(1.1,2.2)}
+  if(!O.gift&&OUT_TIME-O.t>=O.giftAt&&O.t>8){O.gift=true;outSpawn(true)}
+  for(let i=O.els.length-1;i>=0;i--){const c=O.els[i];c.life-=dt;if(c.life<1.2)c.el.style.opacity=Math.max(0,c.life/1.2);if(c.life<=0){c.el.remove();O.els.splice(i,1)}}
+  gHud.textContent=O.d.icon+' '+O.d.name+'   ⏱ '+Math.ceil(Math.max(0,O.t))+'s   🎒 '+O.found;
+  if(O.t<=0)goHome(true);
+}
+
 /* ================= character switch (奶蛙 / 奶蛋) ================= */
-const SAVE_CH='naiwa3d-char';
+const SAVE_CH='naiwa3d-char';const charBtn=$('#charbtn'),charPick=$('#charpick');
 function setChar(name,quiet){
   if(name===CUR&&!quiet)return;
-  const next=name==='egg'?EGG:FRG;
-  FRG.group.visible=next===FRG;EGG.group.visible=next===EGG;
-  for(const g of[FRG.group,EGG.group]){g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1)}
+  const next=CH[name]||FRG;
+  for(const k in CH){const g=CH[k].group;g.visible=CH[k]===next;g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1)}
   CUR=name;FR=next;frog=next.group;UN=next.uniforms;hitMeshes=next.colliders;
   try{localStorage.setItem(SAVE_CH,name)}catch(e){}
-  document.querySelectorAll('#chars .ch').forEach(b=>b.classList.toggle('on',b.dataset.c===name));
-  stopClip();touch=null;dentTarget=0;
+  charBtn.textContent=CHARS[name].icon;charPick.querySelectorAll('.chc').forEach(b=>b.classList.toggle('on',b.dataset.c===name));
+  stopClip();touch=null;dentTarget=0;if(G)endGame();if(!quiet&&wardEl.classList.contains('show'))renderWard();
   if(!quiet){setExpr('happy',1200);jump(7.5);fx('✨',8,'head');
-    if(name==='egg'){say('安~迪！',2000)}else{say('我是奶蛙！',2000)}}
+    say(name==='frog'?'我是奶蛙！':'你好呀！',2000);if(!(name==='egg'||name==='mouse'))setTimeout(()=>{if(CUR===name)ola()},650)}
 }
-document.querySelectorAll('#chars .ch').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();audioInit();sfx('tap');setChar(b.dataset.c)}));
-try{const c=localStorage.getItem(SAVE_CH);if(c==='egg')setChar('egg',true)}catch(e){}
+charPick.innerHTML=Object.entries(CHARS).map(([k,c])=>'<div class="chc" data-c="'+k+'"><b>'+c.icon+'</b>'+c.name+'</div>').join('');
+charBtn.addEventListener('pointerdown',e=>{e.preventDefault();audioInit();sfx('tap');const o=charPick.classList.contains('show');closeTray();if(!o)charPick.classList.add('show')});
+charPick.addEventListener('pointerdown',e=>{const el=e.target.closest('.chc');if(!el)return;e.preventDefault();audioInit();sfx('tap');closeTray();setChar(el.dataset.c)});
+try{const c=localStorage.getItem(SAVE_CH);if(c&&CH[c]&&c!=='frog')setChar(c,true)}catch(e){}
 
 /* ================= start overlay ================= */
 $('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$('#start').style.display='none';started=true;sfx('level');say(CUR==='egg'?'安~迪！':'哇～你来啦！我是奶蛙！',2600);setExpr('happy',1600);jump(8)});
@@ -350,17 +536,19 @@ function update(dt){
   if(started){const k=S.sleeping?.25:1;S.hunger=clamp(S.hunger-dt*.05*k,0,100);S.joy=clamp(S.joy-dt*.035*k,0,100);S.energy=clamp(S.energy+(S.sleeping?dt*2.2:-dt*.03),0,100);
     if(S.sleeping&&S.energy>=100){S.sleeping=false;sfx('yawn');say('睡饱啦！精神百倍！',2200);setExpr('happy',1500);jump(7)}}
   // idle behaviours
-  if(started&&!S.sleeping&&!eatSeq&&talk.state==='idle'&&playT<=0&&!touch&&!drag){
+  if(started&&!S.sleeping&&!eatSeq&&talk.state==='idle'&&playT<=0&&!touch&&!drag&&!G){
     idleT-=dt;if(idleT<=0){idleT=rnd(5,10);const m=baseExpr();
       if(m==='sad')say(pick(['肚肚饿了…🍖','咕噜噜～想吃东西','给我点吃的嘛']),2400);
       else if(m==='angry')say(pick(['哼！没人陪我玩','不开心！摸摸我','哼～']),2400);
       else{const r=Math.random();
-        if(r<.3){jump(8);if(CL.buf[CUR==='egg'?'andy':'catch']&&Math.random()<.5)signature();else{setExpr('happy',900);say(pick(['耶！','奶～','我是奶蛙！']),1500)}}
+        if(r<.3){jump(8);if(canSig()&&Math.random()<.5)signature();else{setExpr('happy',900);if(Math.random()<.5)ola();else say(pick(['耶！','奶～','我是奶蛙！']),1500)}}
         else if(r<.55)say(pick(['摸摸我嘛～','今天也要开心！','咕呱～','戳戳我的肚子试试？']),2400);
         else if(r<.8){kick('roll',5);setExpr('confused',1400);say('嗯？',1000)}
         else{setExpr('yum',1200);say('😋',1000)}}}}
   if(playT>0){playT-=dt;if(J.y<=.02&&Math.random()<.04)jump(rnd(7,9.5))}
   talkUpdate();
+  if(G)gameUpdate(dt);
+  if(OUT)outUpdate(dt);
 
   // expression targets
   const E=EX[curExpr()];
@@ -378,7 +566,8 @@ function update(dt){
     if(q.t>=1.7&&q.t<1.85){ov.mo=0;if(q.n<99){q.n=99;sfx('gulp');SP.sq.d-=3;kick('nod',-3)}}
     if(q.t>=1.85){ov.mo=null;S.hunger=clamp(S.hunger+q.f.v,0,100);S.joy=clamp(S.joy+q.f.v/6,0,100);gainXP(3);sfx('yum');setExpr('yum',1800);say('好好吃！'+q.f.e,1800);fx('❤️',5,'head');jump(6.5);eatSeq=null}}
   else if(drag){const r=cv.getBoundingClientRect(),m=anchor('mouth'),dd=Math.hypot(drag.x-r.left-m.x,drag.y-r.top-m.y);ov.mo=dd<260*(cw/540)?clamp(1.1-dd/(260*(cw/540)),.15,.9):null}
-  else if(talk.state!=='speak'&&ov.mo!=null)ov.mo=null;
+  else if(G&&!G.end&&G.mo>.05&&!CL.cur)ov.mo=clamp(.15+G.mo*.8,0,1);
+  else if(talk.state!=='speak'&&ov.mo!=null&&!CL.cur)ov.mo=null;
 
   // look at pointer / wander
   const lt=now()<look.wT;const tx=lt?look.wx:Math.sin(T*.4)*.35,ty=lt?look.wy:.1+Math.sin(T*.31)*.2;
@@ -406,7 +595,7 @@ function update(dt){
   const tilt=A.tilt+shake*.6+Math.sin(T*.7)*.01;
   frog.scale.set(1+sq*.45+A.puff*.3,1-sq*.5,1+sq*.45+A.puff*.3);
   frog.position.y=J.y+ha*.08*pulse;
-  frog.rotation.z=SP.roll.v*.08+shake+ha*.035*Math.sin(ph*.5)+(playT>0?Math.sin(T*8)*.08:0);
+  frog.rotation.z=(G?G.lean||0:0)+SP.roll.v*.08+shake+ha*.035*Math.sin(ph*.5)+(playT>0?Math.sin(T*8)*.08:0);
   frog.rotation.y=(playT>0?Math.sin(T*3)*.5:0)+look.x*.12;
   // skeleton (supplied rigged model, driven with world-axis deltas)
   const sway=Math.sin(T*1.6)*.03;
@@ -417,15 +606,15 @@ function update(dt){
   UN.uDent.value.set(dentPos.x,dentPos.y,dentPos.z,SP.dent.v);
   // face (eyelids, happy-eye arcs, open mouth, blush) is painted onto a skinned decal that hugs the head surface
   {const u=clamp(Math.max(A.u,bl),0,1),l=clamp(Math.max(A.l,bl*.6),0,1),mo=Math.max(0,A.mo*(1-.28*ha*pulse));
-   FR.paint({lx:clamp(look.x*.9+A.lx,-1,1),ly:clamp(look.y*.8+A.ly,-1,1),u,l,sl:A.sl,arc:A.arc,mo,sm:A.sm,te:A.te,tg:A.tg,bl:A.bl});}
+   FR.paint({lx:clamp(look.x*.9+A.lx,-1,1),ly:clamp(look.y*.8+A.ly,-1,1),u,l,sl:A.sl,arc:A.arc,mo,sm:A.sm,te:A.te,tg:A.tg,bl:A.bl,pup:A.pup});}
   // shadow
   const gs=clamp(1-J.y*.18,.4,1);shadow.position.x=frog.position.x;shadow.scale.set(2.8*gs*(1+sq*.3),2.0*gs,1);shadow.material.opacity=.9*gs;
   // night
   night=sm(night,S.sleeping?1:0,3,dt);
   hemi.intensity=lerp(1.0,.55,night);key.intensity=lerp(2.3,.7,night);fill.intensity=lerp(.7,.2,night);rim.intensity=lerp(1.1,.5,night);
   key.color.setRGB(1,lerp(1,.8,night),lerp(1,1.2,night));
-  scene.background.setRGB(lerp(1,.1,night),lerp(.85,.1,night)*lerp(1,1,0),lerp(.63,.3,night));
-  lampLight.intensity=lerp(6,0,night);lampMats[0].emissiveIntensity=lerp(.9,0,night);
+  if(OUT)scene.background.setHex(OD.scenes[OUT.k].userData.bg);else scene.background.setRGB(lerp(1,.1,night),lerp(.85,.1,night)*lerp(1,1,0),lerp(.63,.3,night));
+  lampLight.intensity=OUT?0:lerp(6,0,night);lampMats[0].emissiveIntensity=lerp(.9,0,night);
   winNight.material.opacity=night;
   // zzz / bubble / toast / hud
   if(S.sleeping){zT-=dt;if(zT<=0){zT=1.3;fx('💤',1,anchor('head'),.5)}}
@@ -437,7 +626,7 @@ const hb=[$('#b1'),$('#b2'),$('#b3')],lvEl=$('#lv'),xpEl=$('#xp'),coinEl=$('#coi
 function hud(){
   [S.hunger,S.joy,S.energy].forEach((v,i)=>{hb[i].style.width=Math.max(6,v)+'%';hb[i].style.filter=v<25?'hue-rotate(-30deg) saturate(2)':''});
   lvEl.textContent='Lv.'+lv();xpEl.style.width=(S.xp%60)/60*100+'%';coinEl.textContent='🪙 '+Math.floor(S.coins);
-  btnEls[0].classList.toggle('on',trayEl.classList.contains('show'));btnEls[1].classList.toggle('on',talk.state!=='idle');btnEls[3].classList.toggle('on',S.sleeping);
+  btnEls[0].classList.toggle('on',trayEl.classList.contains('show'));btnEls[1].classList.toggle('on',talk.state!=='idle');btnEls[3].classList.toggle('on',wardEl.classList.contains('show'));btnEls[4].classList.toggle('on',!!G);btnEls[5].classList.toggle('on',!!OUT||tripEl.classList.contains('show'));btnEls[6].classList.toggle('on',S.sleeping);
   trayEl.querySelectorAll('.food').forEach((el,i)=>el.classList.toggle('no',S.coins<FOODS[i].c));
 }
 
@@ -445,7 +634,7 @@ let last=performance.now();
 function frame(t){const dt=Math.min(.05,(t-last)/1000);last=t;update(dt);renderer.render(scene,camera);requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
 
-window.__naiwa={CL,giggle,catchphrase,andy,setChar,get CUR(){return CUR},EGG,FRG,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
+window.__naiwa={CH,goOut,goHome,get OUT(){return OUT},applyWear,startGame,get G(){return G},CL,giggle,catchphrase,andy,setChar,get CUR(){return CUR},EGG,FRG,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
 $('#go').textContent='点击领养';
 }
 setTimeout(init,60);
