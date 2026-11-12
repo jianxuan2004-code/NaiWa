@@ -306,7 +306,8 @@ function talkUpdate(){
   if(talk.state==='listen'){const m=level(talk.an),t=now();if(m>14){talk.heard=true;talk.lastVoice=t}
     const el=t-talk.t0;if((talk.heard&&t-talk.lastVoice>900)||el>6000||(!talk.heard&&el>4500)){talk.state='stop';exprUntil=0;talk.mr.stop()}}
   else if(talk.state==='speak'){ov.mo=clamp(level(talk.an)/45,0,1)}
-  if(CL.cur){const l=clamp(level(CL.cur.an)/80,0,1);CL.cur.lv=l;ov.mo=CL.cur.k==='catch'?clamp(.12+l*1.1,0,1):clamp(.2+l*1.15,0,1)}
+  if(CL.cur){const t=now(),dt=Math.min(.1,(t-(CL.t||t))/1000);CL.t=t;const c=CL.cur,l=clamp(level(c.an)/80,0,1);c.lv+=(l-c.lv)*(1-Math.exp(-(l>c.lv?5:2.2)*dt)); // slow envelope so the mouth doesn't flutter
+    ov.mo=c.k==='catch'?clamp(.1+c.lv*1.0,0,1):clamp(.25+c.lv*.95,0,1)}else CL.t=0
 }
 
 /* ================= start overlay ================= */
