@@ -217,20 +217,27 @@ export function buildFrog(){
   const dmat=new THREE.MeshStandardMaterial({map:ctex,transparent:true,roughness:.6,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
   dmat.onBeforeCompile=patch;
   const decal=new THREE.SkinnedMesh(dgeo,dmat);decal.frustumCulled=false;decal.renderOrder=2;group.add(decal);decal.bind(skeleton,new THREE.Matrix4());
-  let skin='#f4c93c',lastKey='';
+  let skin=[244,201,60],lastKey='';
   // skin colour sampled from the supplied albedo (forehead area) so eyelids match the painted skin
+  let skinM=skin;
   {const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0);
-      let r=0,gg=0,b=0,n=0;for(const v of remap.keys()){const x=ps.getX(v),y=ps.getY(v);const de=Math.min(Math.hypot(x-.2,y-2.85),Math.hypot(x+.2,y-2.85));if(de>.16&&de<.23&&y>2.8){const u=uvA.getX(v),w=uvA.getY(v);const d=g.getImageData(Math.floor(u*(c.width-1)),Math.floor((1-w)*(c.height-1)),1,1).data;r+=d[0];gg+=d[1];b+=d[2];n++}}
-      if(n){skin='rgb('+Math.round(r/n*.95)+','+Math.round(gg/n*.95)+','+Math.round(b/n*.95)+')';lastKey=''}};im.src=window.ASSETS.albedo}
+      const acc=()=>({r:0,g:0,b:0,n:0}),E=acc(),Mo=acc();
+      for(const v of remap.keys()){const x=ps.getX(v),y=ps.getY(v);
+        const de=Math.min(Math.hypot(x-.2,y-2.85),Math.hypot(x+.2,y-2.85)),dm=Math.hypot(x/.17,(y-2.68)/.075);
+        const tgt=(de>.14&&de<.19)?E:(dm>1.25&&dm<1.9&&y<2.78)?Mo:null;if(!tgt)continue;
+        const u=uvA.getX(v),w=uvA.getY(v);const d=g.getImageData(Math.floor(u*(c.width-1)),Math.floor((1-w)*(c.height-1)),1,1).data;tgt.r+=d[0];tgt.g+=d[1];tgt.b+=d[2];tgt.n++}
+      const rgb=a=>a.n>8?[Math.round(a.r/a.n),Math.round(a.g/a.n),Math.round(a.b/a.n)]:null;
+      const e=rgb(E),m=rgb(Mo)||e;if(e){skin=e;skinM=m;lastKey=''}};im.src=window.ASSETS.albedo}
   const px=x=>(x-DX0)*SC,py=y=>(DY1-y)*SC;
   const EYE={x:.2,y:2.85,r:.115};
   function paint(P){
     const key=[P.u,P.l,P.sl,P.arc,P.mo,P.sm,P.te,P.tg,P.bl,P.lx,P.ly].map(v=>Math.round(v*60)).join(',');if(key===lastKey)return;lastKey=key;
     cx.clearRect(0,0,CW,CH);
     // cover the painted eyes + mouth with skin so nothing static is left behind; we draw our own
-    const patch=(x,y,rx,ry,bl)=>{cx.save();cx.translate(px(x),py(y));cx.scale(1,ry/rx);if('filter' in cx)cx.filter='blur('+(bl||3)+'px)';cx.fillStyle=skin;cx.beginPath();cx.arc(0,0,rx*SC,0,Math.PI*2);cx.fill();cx.restore()};
-    for(const s of[-1,1])patch(s*.2,2.85,.135,.135);
-    patch(0,2.655,.33,.15,14);for(const s of[-1,1])patch(s*.2,2.985,.18,.075,5);
+    const rgba=(c,a)=>'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')';
+    const patch=(x,y,rx,ry,col)=>{cx.save();cx.translate(px(x),py(y));cx.scale(1,ry/rx);const R=rx*SC,g=cx.createRadialGradient(0,0,R*.9,0,0,R*1.55);g.addColorStop(0,rgba(col,1));g.addColorStop(1,rgba(col,0));cx.fillStyle=g;cx.beginPath();cx.arc(0,0,R*1.55,0,Math.PI*2);cx.fill();cx.restore()};
+    for(const s of[-1,1])patch(s*.2,2.85,.128,.128,skin);
+    patch(0,2.68,.17,.075,skinM);
     // blush
     if(P.bl>.03)for(const s of[-1,1]){const g=cx.createRadialGradient(px(s*.31),py(2.6),0,px(s*.31),py(2.6),.12*SC);g.addColorStop(0,'rgba(255,100,100,'+(.5*Math.min(1,P.bl))+')');g.addColorStop(1,'rgba(255,100,100,0)');cx.fillStyle=g;cx.fillRect(px(s*.31)-.12*SC,py(2.6)-.12*SC,.24*SC,.24*SC)}
     // our own eyes (green ring, pupil that follows the pointer, highlight)
@@ -258,7 +265,7 @@ export function buildFrog(){
     for(const s of[-1,1]){
       const ex=s*EYE.x,ey=EYE.y,r=EYE.r*SC,ang=(s<0?1:-1)*P.sl*.7;
       const lid=(from,to)=>{cx.save();cx.translate(px(ex),py(ey));cx.rotate(ang);cx.beginPath();cx.rect(-r*1.6,from,r*3.2,to-from);cx.clip();
-        cx.fillStyle=skin;if('filter' in cx)cx.filter='blur(2.5px)';cx.beginPath();cx.arc(0,0,r*1.08,0,Math.PI*2);cx.fill();cx.restore()};
+        cx.fillStyle=rgba(skin,1);if('filter' in cx)cx.filter='blur(2.5px)';cx.beginPath();cx.arc(0,0,r*1.08,0,Math.PI*2);cx.fill();cx.restore()};
       if(P.u>.03){const yE=-r+2*r*P.u;lid(-r*1.6,yE);
         cx.save();cx.translate(px(ex),py(ey));cx.rotate(ang);cx.strokeStyle='rgba(110,60,10,'+(.4*Math.min(1,Math.max(0,(P.u-.12)/.25)))+')';cx.lineWidth=1.5;cx.beginPath();const hw=Math.sqrt(Math.max(0,(r*1.08)**2-yE*yE));cx.moveTo(-hw,yE);cx.lineTo(hw,yE);cx.stroke();cx.restore()}
       if(P.l>.03){lid(r-2*r*P.l,r*1.6)}
