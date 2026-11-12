@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import {mergeVertices} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import {skinMaterial,patchUV,onSkinColor} from './skin.js';
 
 /* 奶蛋: a smooth egg-shaped character (no limbs) with big green eyes and a tiny beak.
    Same interface as the 奶蛙 model (group / uniforms / colliders / pose / paint) so the game can swap between them. */
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const H=2.7,Hh=H/2,R=1.17,K=.17,CY=1.25;           // height, half height, max radius, taper (narrower top), rotation pivot height
-const SKIN='#ffe583',BEAK='#fbd96e';
+let SKIN='#f4c93c';const BEAK='#fbd96e'; // SKIN (eyelid colour) is replaced by the sampled colour of the frog's albedo once it has decoded
 const ringR=y=>{const t=y/Hh-1;return R*Math.sqrt(Math.max(0,1-t*t))*(1-K*t)}; // body radius at height y
 const surfZ=(x,y)=>Math.sqrt(Math.max(0,ringR(y)**2-x*x));
 export const eggSurfZ=surfZ;
@@ -16,6 +17,7 @@ export function buildEgg(){
   let g=new THREE.SphereGeometry(1,80,60);
   {const P=g.attributes.position;for(let i=0;i<P.count;i++){const x=P.getX(i),y=P.getY(i),z=P.getZ(i),k=R*(1-K*y);P.setXYZ(i,x*k,Hh*(1+y),z*k)}}
   g.deleteAttribute('uv');g.deleteAttribute('normal');g=mergeVertices(g,1e-4);g.computeVertexNormals();
+  patchUV(g,[0,Hh,2*R,H]); // borrow the plain-yellow patch of the 奶蛙 albedo so the egg is shaded by the same PBR textures
 
   const uniforms={uDent:{value:new THREE.Vector4(0,1,1,0)},uInfl:{value:0},uBelly:{value:0}};
   const patch=sh=>{Object.assign(sh.uniforms,uniforms);
@@ -26,7 +28,7 @@ export function buildEgg(){
         float by=transformed.y-1.0;
         transformed+=objectNormal*(uInfl+uBelly*exp(-by*by/.6)*smoothstep(-.2,.5,objectNormal.z));`)};
   const params={roughness:.5,clearcoat:.28,clearcoatRoughness:.45};
-  const bodyMat=new THREE.MeshPhysicalMaterial({color:SKIN,...params});bodyMat.onBeforeCompile=patch;
+  const bodyMat=skinMaterial(0xffffff,true,{clearcoat:.28,clearcoatRoughness:.45});bodyMat.onBeforeCompile=patch;
   const body=new THREE.Mesh(g,bodyMat);body.frustumCulled=false;
 
   /* ---- hierarchy: group (ground) > pivot (rotates about the egg's middle) > inner (egg coordinates) ---- */
@@ -55,6 +57,7 @@ export function buildEgg(){
   const px=x=>(x-X0)*SC,py=y=>(Y1-y)*SC;
   const EYE={x:.38,y:2.12,r:.175};
   let lastKey='';
+  onSkinColor(c=>{SKIN='rgb('+c[0]+','+c[1]+','+c[2]+')';lastKey=''});
   function paint(P){
     const key=[P.u,P.l,P.sl,P.arc,P.mo,P.sm,P.bl,P.lx,P.ly].map(v=>Math.round(v*60)).join(',');if(key===lastKey)return;lastKey=key;
     cx.clearRect(0,0,CW,CH);
@@ -100,5 +103,6 @@ export function buildEgg(){
   }
 
   const anchors={head:[inner,[0,2.3,.6]],mouth:[inner,[0,1.82,1.1]],belly:[inner,[0,1.0,1.2]],feet:[group,[0,.1,.4]],top:[inner,[0,H+.3,.1]]};
-  return{group,uniforms,colliders:[hit],regionOf,pose,paint,anchors,hipY:CY};
+  const prof=y=>{const r=ringR(clamp(y,.02,H-.02));return{rx:r,zf:r,zb:-r}};
+  return{group,uniforms,colliders:[hit],regionOf,pose,paint,anchors,hipY:CY,prof};
 }

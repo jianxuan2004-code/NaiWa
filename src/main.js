@@ -4,6 +4,7 @@ import {buildEgg,eggSurfZ} from './egg.js';
 import {SLOTS,ITEMS,ITEM,buildItem,FIT} from './wardrobe.js';
 import {buildOutdoor} from './outdoor.js';
 import {buildPet} from './pets.js';
+import './ui.js';
 function init(){
 
 /* ================= helpers ================= */
@@ -82,7 +83,8 @@ const FRG=buildFrog();scene.add(FRG.group);
 FRG.anchors={head:[FRG.face,[0,3.0,.4]],mouth:[FRG.face,[0,2.73,.5]],belly:[FRG.body,[0,1.4,.9]],feet:[FRG.group,[0,.1,.4]],top:[FRG.face,[0,3.35,.1]]};
 const EGG=buildEgg();scene.add(EGG.group);EGG.group.visible=false;
 FRG.wearFrame=FRG.face;EGG.wearFrame=EGG.anchors.head[0];FIT.frog.z=FRG.faceZ;FIT.egg.z=eggSurfZ;
-const PETS={};for(const k of['fish','cat','mouse','poop']){const p=buildPet(k);p.group.visible=false;scene.add(p.group);PETS[k]=p;FIT[k]=p.fit}
+FRG.bodyFrame=FRG.body;EGG.bodyFrame=EGG.wearFrame;FIT.frog.prof=FRG.prof;FIT.frog.torso=[.95,2.15];FIT.egg.prof=EGG.prof;FIT.egg.torso=[.3,1.5];
+const PETS={};for(const k of['fish','cat','mouse','poop']){const p=buildPet(k);p.group.visible=false;scene.add(p.group);p.bodyFrame=p.wearFrame;PETS[k]=p;FIT[k]=p.fit}
 const CH={frog:FRG,egg:EGG,...PETS};
 const CHARS={
   frog:{icon:'🐸',name:'奶蛙'},egg:{icon:'🥚',name:'奶蛋'},
@@ -286,7 +288,7 @@ function onRub(region){
 /* ---- buttons / tray ---- */
 const FOODS=[{e:'🍎',n:'苹果',c:0,v:12},{e:'🥕',n:'胡萝卜',c:2,v:16},{e:'🍔',n:'汉堡',c:4,v:28},{e:'🍰',n:'蛋糕',c:6,v:36},{e:'🍗',n:'鸡腿',c:8,v:48}];
 trayEl.innerHTML=FOODS.map((f,i)=>`<div class="food" data-i="${i}"><b>${f.e}</b>${f.n}<small>${f.c?'🪙'+f.c:'免费'}</small></div>`).join('');
-function closeTray(){trayEl.classList.remove('show');wardEl.classList.remove('show');tripEl.classList.remove('show');charPick.classList.remove('show')}
+function closeTray(){try{closeConfirm()}catch(e){}trayEl.classList.remove('show');wardEl.classList.remove('show');tripEl.classList.remove('show');charPick.classList.remove('show')}
 document.querySelectorAll('.btn').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();audioInit();sfx('tap');
   const id=b.dataset.b;
   if(G&&!G.end&&id!=='game')return;
@@ -353,11 +355,11 @@ function talkUpdate(){
 }
 
 /* ================= 换装 wardrobe ================= */
-const wardEl=$('#wardrobe'),wTabs=$('#wtabs'),wItems=$('#witems');let wTab='hat';
+const wardEl=$('#wardrobe'),wTabs=$('#wtabs'),wItems=$('#witems');let wTab='body';
 const wearObjs={};for(const k in CH)wearObjs[k]={};
 function applyWear(){
-  for(const ch in CH){const fr=CH[ch].wearFrame;
-    for(const sl of SLOTS){const id=S.wear[ch][sl.id]||null,cur=wearObjs[ch][sl.id];
+  for(const ch in CH){
+    for(const sl of SLOTS){const fr=sl.id==='body'?CH[ch].bodyFrame:CH[ch].wearFrame;const id=S.wear[ch][sl.id]||null,cur=wearObjs[ch][sl.id];
       if(cur&&cur.userData.item===id)continue;
       if(cur){fr.remove(cur);cur.traverse(o=>{if(o.geometry)o.geometry.dispose()})}
       wearObjs[ch][sl.id]=null;
@@ -370,19 +372,45 @@ function renderWard(){
     return '<div class="wit'+(cur===i.id?' on':'')+(!own&&S.coins<i.price?' lock':'')+'" data-i="'+i.id+'"><b>'+i.icon+'</b>'+i.name+'<small>'+(cur===i.id?'穿戴中':own?'已拥有':'🪙'+i.price)+'</small></div>'}).join('')
     +'<div class="wit'+(!cur?' on':'')+'" data-i=""><b>🚫</b>不戴<small>&nbsp;</small></div>';
 }
-wardEl.addEventListener('pointerdown',e=>{
-  const tab=e.target.closest('.wtab');if(tab){e.preventDefault();wTab=tab.dataset.s;sfx('tap');renderWard();return}
-  const el=e.target.closest('.wit');if(!el)return;audioInit();
-  const id=el.dataset.i,cur=S.wear[CUR][wTab];
-  if(!id){S.wear[CUR][wTab]=null;sfx('tap');applyWear();renderWard();return}
-  const it=ITEM[id];
-  if(!S.own.includes(id)){
-    if(S.coins<it.price){sfx('no');showToast('金币不够啦～多摸摸、多玩接接乐可以赚金币',2400);return}
-    S.coins-=it.price;S.own.push(id);sfx('coin');showToast('买到啦！'+it.icon+' '+it.name,1600)}
+/* wearing: a tap (not a scroll / swipe) on an owned item wears it; an unowned one asks for confirmation before any coins are spent */
+function wearToggle(id){
+  const cur=S.wear[CUR][wTab];
   if(cur===id){S.wear[CUR][wTab]=null;sfx('tap')}
   else{S.wear[CUR][wTab]=id;sfx('level');if(Math.random()<.5)setTimeout(ola,350);setExpr('happy',1400);jump(6.5);kick('sq',3);fx('✨',8,'head');
     if(!S.sleeping)say(pick(['好看吗？','新衣服！','嘿嘿～','我是潮蛙！']),1600)}
   applyWear();renderWard();save();
+}
+const cfEl=$('#confirm');let cfId=null,cfAt=0;
+function askBuy(id){const it=ITEM[id];cfId=id;cfAt=now();
+  $('#cfIcon').textContent=it.icon;$('#cfT').textContent='购买「'+it.name+'」？';$('#cfP').textContent='花费 🪙'+it.price+'，你现在有 🪙'+Math.floor(S.coins);$('#cfYes').textContent='购买 🪙'+it.price;
+  cfEl.style.display='flex';const no=cfEl.querySelector('[data-a=no]');if(no)setTimeout(()=>no.focus({preventScroll:true}),30)}
+function closeConfirm(){if(cfEl.style.display!=='none'){cfEl.style.display='none';cfId=null}}
+cfEl.addEventListener('click',e=>{
+  const btn=e.target.closest('.cbtn');
+  if(!btn){if(e.target===cfEl)closeConfirm();return}
+  if(btn.dataset.a==='no'){sfx('tap');closeConfirm();return}
+  if(now()-cfAt<350)return;                                   // ignore a stray double tap right after the dialog opens
+  const id=cfId,it=id&&ITEM[id];closeConfirm();if(!it||S.own.includes(id))return;
+  if(S.coins<it.price){sfx('no');showToast('金币不够啦～多摸摸、多玩接接乐可以赚金币',2400);return}
+  S.coins-=it.price;S.own.push(id);sfx('coin');showToast('买到啦！'+it.icon+' '+it.name,1600);wearToggle(id);
+});
+let wTap=null;
+wardEl.addEventListener('pointerdown',e=>{
+  const tab=e.target.closest('.wtab');if(tab){e.preventDefault();wTab=tab.dataset.s;sfx('tap');renderWard();return}
+  const el=e.target.closest('.wit');wTap=el?{el,x:e.clientX,y:e.clientY,sl:wItems.scrollLeft}:null;
+});
+wardEl.addEventListener('pointercancel',()=>{wTap=null});     // the browser took over for scrolling
+wardEl.addEventListener('pointerup',e=>{
+  const d=wTap;wTap=null;if(!d)return;
+  const el=e.target.closest('.wit');if(el!==d.el)return;
+  if(Math.hypot(e.clientX-d.x,e.clientY-d.y)>10*(cw/540)||Math.abs(wItems.scrollLeft-d.sl)>4)return;   // it was a swipe, not a tap
+  audioInit();const id=el.dataset.i,cur=S.wear[CUR][wTab];
+  if(!id){S.wear[CUR][wTab]=null;sfx('tap');applyWear();renderWard();return}
+  const it=ITEM[id];
+  if(!S.own.includes(id)){
+    if(S.coins<it.price){sfx('no');showToast('金币不够啦～多摸摸、多玩接接乐可以赚金币',2400);return}
+    sfx('tap');askBuy(id);return}
+  wearToggle(id);
 });
 applyWear();
 
@@ -432,7 +460,7 @@ function gameFinish(){
   gEnd.style.display='block';save();
 }
 gEnd.addEventListener('pointerdown',e=>{const b=e.target.closest('.go2');if(b&&b.dataset.a==='ok'){e.preventDefault();gEnd.style.display='none'}else if(b){e.preventDefault();audioInit();G=null;startGame()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&G)endGame()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(cfId){e.preventDefault();closeConfirm();return}if(G)endGame()}});
 function endGame(){if(!G)return;for(const it of G.items)it.el.remove();G=null;frog.position.x=0;gHud.style.display='none';gEnd.style.display='none'}
 function gamePointer(e){if(!G||G.end)return;const r=cv.getBoundingClientRect();G.tx=clamp((e.clientX-r.left)/r.width*2-1,-1,1)}
 addEventListener('pointermove',gamePointer);addEventListener('pointerdown',gamePointer);
@@ -634,7 +662,7 @@ let last=performance.now();
 function frame(t){const dt=Math.min(.05,(t-last)/1000);last=t;update(dt);renderer.render(scene,camera);requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
 
-window.__naiwa={CH,goOut,goHome,get OUT(){return OUT},applyWear,startGame,get G(){return G},CL,giggle,catchphrase,andy,setChar,get CUR(){return CUR},EGG,FRG,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
+window.__naiwa={S,CH,goOut,goHome,get OUT(){return OUT},applyWear,startGame,get G(){return G},CL,giggle,catchphrase,andy,setChar,get CUR(){return CUR},EGG,FRG,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
 $('#go').textContent='点击领养';
 }
 setTimeout(init,60);

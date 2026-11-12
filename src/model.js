@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {skinTextures,skinMaterial,patchUV} from './skin.js';
 
 /* Loads the supplied rigged 奶蛙 model (exported from the FBX by tools: baked to y-up, 3.1 tall, feet at y=0,
    Mixamo-style skeleton) and drives it procedurally with world-axis rotation deltas. */
@@ -10,10 +11,15 @@ const rx=a=>qAxis(AX,a),ry=a=>qAxis(AY,a),rz=a=>qAxis(AZ,a);
 const mul=(...q)=>q.reduce((a,b)=>a.multiply(b));
 const b64=(s,T)=>{const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new T(u.buffer)};
 
-export function buildFrog(){
+/* variant (optional) turns the same rigged 奶蛙 body into another character:
+   {tint, build(ctx), anim(t,P,ctx), face(cx,px,py,P)}  — extras are attached to bones and use the same PBR textures */
+let PREP=null,TAB=null; // the fixed / smoothed body geometry and the face-depth table are the same for every character: compute them once
+export function buildFrog(variant={}){
   const t0=performance.now();
   const M=JSON.parse(window.ASSETS.model);
-  const geo=new THREE.BufferGeometry();
+  let geo;
+  if(PREP)geo=PREP.clone();else{
+  geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(b64(M.pos,Float32Array),3));
   geo.setAttribute('normal',new THREE.BufferAttribute(b64(M.nor,Float32Array),3));
   geo.setAttribute('uv',new THREE.BufferAttribute(b64(M.uv,Float32Array),2));
@@ -54,14 +60,25 @@ export function buildFrog(){
    for(let v=0;v<cnt;v++){const c=cid[v],w=Math.min(1,cw[c]*1.5);if(w<=0)continue;const l=Math.hypot(acc[c*3],acc[c*3+1],acc[c*3+2])||1;
      let x=N.getX(v)*(1-w)+acc[c*3]/l*w,y=N.getY(v)*(1-w)+acc[c*3+1]/l*w,z=N.getZ(v)*(1-w)+acc[c*3+2]/l*w;const m=Math.hypot(x,y,z)||1;N.setXYZ(v,x/m,y/m,z/m)}
    P.needsUpdate=N.needsUpdate=true;}
+  PREP=geo.clone();}
+
+  /* ---- torso profile for clothes: per height, half-width and front/back depth of the torso-weighted vertices (arms excluded) ---- */
+  const prof=(()=>{
+    const nm=M.bones.map(b=>b.n),isT=i=>/^(Hips|Spine|Spine1|Spine2)$/.test(nm[i]),P=geo.attributes.position,SI=geo.attributes.skinIndex.array,SW=geo.attributes.skinWeight.array;
+    const N=70,D=.04,Y0=.4,mx=new Float32Array(N),zf=new Float32Array(N).fill(-9),zb=new Float32Array(N).fill(9);
+    for(let v=0;v<P.count;v++){let best=-1,bw=0;for(let j=0;j<4;j++)if(SW[v*4+j]>bw){bw=SW[v*4+j];best=SI[v*4+j]}if(!isT(best))continue;
+      const b=Math.round((P.getY(v)-Y0)/D);if(b<0||b>=N)continue;const x=Math.abs(P.getX(v)),z=P.getZ(v);mx[b]=Math.max(mx[b],x);if(x<.35){zf[b]=Math.max(zf[b],z);zb[b]=Math.min(zb[b],z)}}
+    for(let it=0;it<N;it++)for(let b=0;b<N;b++){if(zf[b]<-8){const a=b>0?zf[b-1]:-9,c=b<N-1?zf[b+1]:-9;if(a>-8||c>-8){zf[b]=a>-8&&c>-8?(a+c)/2:Math.max(a,c);zb[b]=(b>0&&zb[b-1]<8&&b<N-1&&zb[b+1]<8)?(zb[b-1]+zb[b+1])/2:(zb[b-1]<8?zb[b-1]:zb[b+1])}}if(mx[b]===0){const a=b>0?mx[b-1]:0,c=b<N-1?mx[b+1]:0;if(a||c)mx[b]=a&&c?(a+c)/2:Math.max(a,c)}}
+    for(let b=0;b<N;b++){const y=Y0+b*D,e=1.02*Math.sqrt(Math.max(0,1-((y-1.45)/.95)**2))*Math.min(1,Math.max(0,(y-1.0)/.4));mx[b]=Math.max(mx[b],e)}   // flank vertices are weighted to the arms: never narrower than the belly ellipse
+    for(let p=0;p<3;p++)for(const A of[mx,zf,zb]){const c=Float32Array.from(A);for(let b=1;b<N-1;b++)A[b]=(c[b-1]+2*c[b]+c[b+1])/4}
+    return y=>{const f=clamp((y-Y0)/D,0,N-1.001),i=Math.floor(f),t=f-i;return{rx:lerp(mx[i],mx[i+1],t),zf:lerp(zf[i],zf[i+1],t),zb:lerp(zb[i],zb[i+1],t)}};
+  })();
 
   /* ---- material (albedo / normal / roughness from the supplied PBR set) ---- */
-  const tl=new THREE.TextureLoader();
-  const albedo=tl.load(window.ASSETS.albedo);albedo.colorSpace=THREE.SRGBColorSpace;albedo.anisotropy=4;
-  const normal=tl.load(window.ASSETS.normal);
-  const rough=tl.load(window.ASSETS.rough);
+  const TX=skinTextures(),albedo=TX.albedo,normal=TX.normal,rough=TX.rough;
   const uniforms={uDent:{value:new THREE.Vector4(0,1,1,0)},uInfl:{value:0},uBelly:{value:0}};
-  const mat=new THREE.MeshStandardMaterial({map:albedo,normalMap:normal,normalScale:new THREE.Vector2(1,1),roughnessMap:rough,roughness:1,metalness:0});
+  const tint=variant.tint==null?0xffffff:variant.tint;
+  const mat=skinMaterial(tint);
   const patch=sh=>{
     Object.assign(sh.uniforms,uniforms);
     sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nuniform vec4 uDent;uniform float uInfl;uniform float uBelly;varying vec3 vRP;')
@@ -104,8 +121,8 @@ export function buildFrog(){
     const h=ray.intersectObject(tmp,false)[0];if(!h)return null;
     const n=h.face.normal.clone();return{x:h.point.x,y:h.point.y,z:h.point.z,n:[n.x,n.y,n.z]};
   };
-  const FX0=-.7,FX1=.7,FY0=1.85,FY1=3.05,FNX=43,FNY=37,tab=new Float32Array(FNX*FNY);
-  for(let j=0;j<FNY;j++)for(let i=0;i<FNX;i++){const s=surf(lerp(FX0,FX1,i/(FNX-1)),lerp(FY0,FY1,j/(FNY-1)));tab[j*FNX+i]=s?s.z:.3}
+  const FX0=-.7,FX1=.7,FY0=1.85,FY1=3.05,FNX=43,FNY=37,tab=TAB||new Float32Array(FNX*FNY);
+  if(!TAB){for(let j=0;j<FNY;j++)for(let i=0;i<FNX;i++){const s=surf(lerp(FX0,FX1,i/(FNX-1)),lerp(FY0,FY1,j/(FNY-1)));tab[j*FNX+i]=s?s.z:.3}TAB=tab}
   const faceZ=(x,y)=>{const fx=clamp((x-FX0)/(FX1-FX0),0,1)*(FNX-1),fy=clamp((y-FY0)/(FY1-FY0),0,1)*(FNY-1),i=Math.min(FNX-2,Math.floor(fx)),j=Math.min(FNY-2,Math.floor(fy)),a=fx-i,b=fy-j;
     return lerp(lerp(tab[j*FNX+i],tab[j*FNX+i+1],a),lerp(tab[(j+1)*FNX+i],tab[(j+1)*FNX+i+1],a),b)};
 
@@ -127,6 +144,16 @@ export function buildFrog(){
   // arm rest angle (below horizontal) for hang computation
   const armPhi=s=>{const a=wp(s+'Arm'),e=wp(s+'Hand_end');return Math.atan2(a.y-e.y,Math.abs(e.x-a.x))};
   const PHI={Left:armPhi('Left'),Right:armPhi('Right')};
+
+  /* ---- variant extras (ears, tails, fins …): meshes riding on a bone, positioned in absolute rest-pose coordinates ---- */
+  const extras={};
+  const vctx={THREE,by,wp,face,body,extras,
+    mat:(c=0xffffff,o={})=>skinMaterial(c,false,o),
+    uv:(geo,planar)=>patchUV(geo,planar),
+    add:(boneName,mesh,pivot,name)=>{mesh.frustumCulled=false;let o=mesh;const host=attach(boneName);
+      if(pivot){o=new THREE.Group();o.position.set(...pivot);mesh.position.sub(new THREE.Vector3(...pivot));o.add(mesh)}
+      host.add(o);if(name)extras[name]=o;return o}};
+  if(variant.build)variant.build(vctx);
 
   /* ---- procedural posing ----
      P: {dy, lean, tilt, nod, yaw, roll, ar:[sx,sz,ex,ez], al:[..], fing, hip, sit, kneeBend, sway}
@@ -196,6 +223,7 @@ export function buildFrog(){
     for(const[s,side,v] of[['Left',1,P.ar],['Right',-1,P.al]]){
       const sv=solveArm(s,side,v,P.fing,R);setArm(s,side,sv,P.fing,armIdx(s));
     }
+    if(variant.anim)variant.anim(performance.now()/1000,P,extras);
   }
   /* ---- face decal: a skinned copy of the front-of-head triangles, lifted 4mm, textured with a canvas ---- */
   const nor=geo.attributes.normal,si=geo.attributes.skinIndex,sw=geo.attributes.skinWeight,ps=geo.attributes.position,ix=geo.index.array,uvA=geo.attributes.uv;
@@ -227,7 +255,7 @@ export function buildFrog(){
         const tgt=(de>.14&&de<.19)?E:(dm>1.25&&dm<1.9&&y<2.78)?Mo:null;if(!tgt)continue;
         const u=uvA.getX(v),w=uvA.getY(v);const d=g.getImageData(Math.floor(u*(c.width-1)),Math.floor((1-w)*(c.height-1)),1,1).data;tgt.r+=d[0];tgt.g+=d[1];tgt.b+=d[2];tgt.n++}
       const rgb=a=>a.n>8?[Math.round(a.r/a.n),Math.round(a.g/a.n),Math.round(a.b/a.n)]:null;
-      const e=rgb(E),m=rgb(Mo)||e;if(e){skin=e;skinM=m;lastKey=''}};im.src=window.ASSETS.albedo}
+      const e=rgb(E),m=rgb(Mo)||e;if(e){const tc=new THREE.Color(tint),lin=v=>{v/=255;return v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4)},srgb=v=>Math.round(255*(v<=.0031308?v*12.92:1.055*Math.pow(v,1/2.4)-.055)),tt=c=>c.map((v,i)=>srgb(lin(v)*[tc.r,tc.g,tc.b][i]));skin=tt(e);skinM=tt(m);lastKey=''}};im.src=window.ASSETS.albedo}
   const px=x=>(x-DX0)*SC,py=y=>(DY1-y)*SC;
   const EYE={x:.2,y:2.85,r:.115};
   function paint(P){
@@ -277,9 +305,10 @@ export function buildFrog(){
         cx.stroke();cx.restore();
       }
     }
+    if(variant.face)variant.face(cx,px,py,P,SC);
     ctex.needsUpdate=true;
   }
 
   console.log('model built',geo.attributes.position.count,'verts',(performance.now()-t0|0)+'ms','armPhi',PHI.Left.toFixed(2));
-  return{group,mesh,bones:by,uniforms,surf,faceZ,colliders,face,body,hipY:wp('Hips').y,pose,paint,HEAD:{x:0,y:0,z:0}};
+  return{group,mesh,bones:by,extras,prof,uniforms,surf,faceZ,colliders,face,body,hipY:wp('Hips').y,pose,paint,HEAD:{x:0,y:0,z:0}};
 }
