@@ -103,7 +103,7 @@ export function buildItem(id,ch){
     case'round':case'sun':case'heart':case'nerd':case'star':{const r=f.eyeR*1.35;
       const frame=M(id==='heart'?0xff4f92:id==='sun'?0x15151a:id==='star'?0xffc61a:id==='nerd'?0x7a4a22:0x23232b,{roughness:.3,metalness:.2});
       const inner=[];
-      for(const sd of[-1,1]){const L=new THREE.Group(),F=surfFrame(f,sd*f.eyeX,f.eyeY,.03);L.position.copy(F.p);L.quaternion.copy(F.q);g.add(L);
+      for(const sd of[-1,1]){const L=new THREE.Group(),F=surfFrame(f,sd*f.eyeX+(f.eyeCX||0),f.eyeY,.03);L.position.copy(F.p);L.quaternion.copy(F.q);g.add(L);
         if(id==='heart'){const sh=heart(),geo=new THREE.ExtrudeGeometry(sh,{depth:.02,bevelEnabled:true,bevelThickness:.012,bevelSize:.012,bevelSegments:2});
           add(L,geo,frame,[0,.01,0],[0,0,0],[r*2.2,r*2.2,1]);
           add(L,new THREE.ShapeGeometry(sh),M(0xffc2dc,{transparent:true,opacity:.35}),[0,.01,.034],[0,0,0],[r*1.95,r*1.95,1])}
@@ -116,7 +116,7 @@ export function buildItem(id,ch){
         add(L,new THREE.CylinderGeometry(r*.07,r*.07,.34,8),frame,[sd*r,0,-.17],[Math.PI/2,0,0]);
         inner.push(new THREE.Vector3(-sd*r*.92,0,.01).applyQuaternion(F.q).add(F.p))}
       // nose bridge joins the two inner rims, kept just outside the surface
-      const [A,B2]=inner,mid=A.clone().add(B2).multiplyScalar(.5),len=A.distanceTo(B2),zc=f.z(0,mid.y)+.016;if(mid.z<zc)mid.z=zc;
+      const [A,B2]=inner,mid=A.clone().add(B2).multiplyScalar(.5),len=A.distanceTo(B2),zc=f.z(mid.x,mid.y)+.016;if(mid.z<zc)mid.z=zc;
       const br=add(g,new THREE.CylinderGeometry(r*.09,r*.09,len+.02,8),frame,[mid.x,mid.y,mid.z]);br.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B2.clone().sub(A).normalize());break}
     /* ---------- neck ---------- */
     case'bowtie':{const F=surfFrame(f,0,f.neckY,.035);g.position.copy(F.p);g.quaternion.copy(F.q);const k=M(0xd7263d);

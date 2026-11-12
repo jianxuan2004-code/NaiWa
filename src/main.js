@@ -7,6 +7,7 @@ import {buildOutdoor} from './outdoor.js';
 import {buildPet} from './pets.js';
 import {buildBed,BED} from './bed.js';
 import {buildDecor} from './room.js';
+import {buildBath} from './bath.js';
 import './ui.js';
 function init(){
 
@@ -82,6 +83,7 @@ const BEDO=buildBed();scene.add(BEDO.group);
 const DEC=buildDecor({WALLZ,wall,floor,skirt});scene.add(DEC.group);
 const ROOM=[wall,floor,skirt,rug,winFrame,winDay,winNight,frameG,lamp,lampLight,BEDO.group,DEC.group];
 const OD=buildOutdoor();scene.add(OD.root);
+const BATHO=buildBath();scene.add(BATHO.group);
 
 /* ================= the 奶蛙 model (seamless skinned mesh, see frog.js) ================= */
 const FRG=buildFrog();scene.add(FRG.group);
@@ -153,7 +155,7 @@ const SAVE='naiwa3d-save-v1';
 S={hunger:70,joy:70,energy:80,coins:20,xp:0,sleeping:false,last:Date.now()};
 try{const t=JSON.parse(localStorage.getItem(SAVE));if(t){Object.assign(S,t);const m=Math.min((Date.now()-S.last)/60000,600);
   S.hunger=clamp(S.hunger-m*.12,15,100);S.joy=clamp(S.joy-m*.08,15,100);S.energy=clamp(S.energy+(S.sleeping?m*.5:-m*.05),10,100)}}catch(e){}
-S.own=Array.isArray(S.own)?S.own:[];S.wear=S.wear||{};for(const k in CH)S.wear[k]=S.wear[k]||{};S.best=S.best||0;
+S.clean=S.clean==null?70:clamp(S.clean,0,100);S.own=Array.isArray(S.own)?S.own:[];S.wear=S.wear||{};for(const k in CH)S.wear[k]=S.wear[k]||{};S.best=S.best||0;
 const save=()=>{S.last=Date.now();try{localStorage.setItem(SAVE,JSON.stringify(S))}catch(e){}};
 setInterval(save,5000);addEventListener('pagehide',save);
 const lv=()=>1+Math.floor(S.xp/60);
@@ -181,7 +183,10 @@ function sfx(n){switch(n){
   case'meow':tone(820,.12,'triangle',.3,250);tone(1050,.32,'triangle',.28,-520,.1);break;
   case'squeak':tone(1900,.07,'square',.1,700);tone(2200,.07,'square',.1,500,.09);break;
   case'blub':for(let i=0;i<3;i++)tone(260+i*70,.1,'sine',.32,260,i*.11);break;
-  case'poot':tone(160,.22,'sawtooth',.22,-70);noise(.12,.25);break;}}
+  case'poot':tone(160,.22,'sawtooth',.22,-70);noise(.12,.25);break;
+  case'scrub':noise(.07,.16);break;
+  case'pop':tone(900,.07,'triangle',.2,500);break;
+  case'splash':noise(.45,.35);tone(900,.25,'sine',.1,-400);break;}}
 /* ---- real voice clips: the frog's laugh (from the supplied videos) ---- */
 const CL={buf:{},cur:null,flip:false,n:0};
 function b64buf(u){const t=atob(u.split(',')[1]),a=new Uint8Array(t.length);for(let i=0;i<t.length;i++)a[i]=t.charCodeAt(i);return a.buffer}
@@ -248,7 +253,7 @@ function pick3(){
 let touch=null,rubAcc=0,pokeCount=0,pokeT=0,lastSay=0,started=false;
 const cv=renderer.domElement;
 cv.addEventListener('pointerdown',e=>{
-  e.preventDefault();audioInit();if(G){if(G.end)endGame();else return}cv.setPointerCapture(e.pointerId);pointerNDC(e);
+  e.preventDefault();audioInit();if(BATH){cv.setPointerCapture(e.pointerId);bathPointer(e,true);return}if(G){if(G.end)endGame();else return}cv.setPointerCapture(e.pointerId);pointerNDC(e);
   const h=pick3();if(!h)return;
   if(h.region==='lamp'){sfx('tap');toggleSleep();return}
   touch={region:h.region,moved:0,t:now(),x:e.clientX,y:e.clientY};
@@ -256,6 +261,7 @@ cv.addEventListener('pointerdown',e=>{
 });
 cv.addEventListener('pointermove',e=>{
   pointerNDC(e);look.wx=ndc.x;look.wy=ndc.y;look.wT=now()+3000;
+  if(BATH){bathPointer(e,false);return}
   if(!touch)return;
   const d=Math.hypot(e.clientX-touch.x,e.clientY-touch.y);touch.moved+=d;touch.x=e.clientX;touch.y=e.clientY;
   const h=pick3();if(h&&h.region==='belly')pressDent(h.local,.5);
@@ -266,6 +272,7 @@ function endTouch(){
   if(touch.moved<12&&now()-touch.t<600)onTap(touch.region);
   touch=null;rubAcc=0;
 }
+cv.addEventListener('pointerup',()=>{if(BATH)BATH.down=false});cv.addEventListener('pointercancel',()=>{if(BATH)BATH.down=false});
 cv.addEventListener('pointerup',endTouch);cv.addEventListener('pointercancel',endTouch);
 function pressDent(local,a){dentPos.copy(local);dentTarget=a}
 
@@ -298,11 +305,12 @@ document.querySelectorAll('.btn').forEach(b=>b.addEventListener('pointerdown',e=
   const id=b.dataset.b;
   if(G&&!G.end&&id!=='game')return;
   if(G&&G.end&&id!=='game')endGame();
-  if(OUT&&(id==='game'||id==='sleep')){sfx('no');showToast(id==='sleep'?'外面不能睡觉，先回家吧':'先回家再玩接接乐吧',2000);return}
+  if(BATH&&id!=='bath')endBath(true);
+  if(OUT&&(id==='game'||id==='sleep'||id==='bath')){sfx('no');showToast(id==='sleep'?'外面不能睡觉，先回家吧':id==='bath'?'先回家再洗澡吧':'先回家再玩接接乐吧',2000);return}
   if(id==='out'){if(OUT){showToast('已经在外面玩啦，点上面的"回家"',2000);return}if(S.sleeping)wake();const o=tripEl.classList.contains('show');closeTray();if(!o){renderTrip();tripEl.classList.add('show')}return}
   if(id==='feed'){if(S.sleeping)wake();wardEl.classList.remove('show');tripEl.classList.remove('show');trayEl.classList.toggle('show');return}
   if(id==='dress'){if(S.sleeping)wake();const o=wardEl.classList.contains('show');closeTray();if(!o){renderWard();wardEl.classList.add('show')}return}
-  closeTray();if(id==='sleep')toggleSleep();else if(id==='play')play();else if(id==='talk')startTalk();else if(id==='game')startGame();
+  closeTray();if(id==='bath')startBath();else if(id==='sleep')toggleSleep();else if(id==='play')play();else if(id==='talk')startTalk();else if(id==='game')startGame();
 }));
 let playT=0;
 function play(){
@@ -471,6 +479,73 @@ function endGame(){if(!G)return;for(const it of G.items)it.el.remove();G=null;fr
 function gamePointer(e){if(!G||G.end)return;const r=cv.getBoundingClientRect();G.tx=clamp((e.clientX-r.left)/r.width*2-1,-1,1)}
 addEventListener('pointermove',gamePointer);addEventListener('pointerdown',gamePointer);
 
+/* ================= 洗澡 bath ================= */
+/* The pet sits in a tub of foam. Rub the dirty spots with your finger (drag) to scrub them into foam; once it is spotless tap the
+   shower 🚿 to rinse the foam off. Reward: coins, joy, xp and a fully clean pet. Cleanliness slowly drops over time (S.clean). */
+let BATH=null,bathK=0;const bbarEl=$('#bbar');
+function bathMsg(){
+  if(!BATH)return;
+  bbarEl.style.display='block';bbarEl.firstChild.style.width=(BATH.phase==='scrub'?(BATH.total-BATH.dirt.length)/BATH.total*(BATH.phase==='scrub'?90:100):100)+'%';
+  gHud.textContent=BATH.phase==='scrub'?'🛁 洗澡   🫧 '+(BATH.total-BATH.dirt.length)+'/'+BATH.total:BATH.phase==='ready'?'🚿 点淋浴冲掉泡泡':'🚿 冲水中…';
+}
+function startBath(){
+  if(BATH){endBath(true);return}
+  if(OUT||G)return;
+  if(S.sleeping)wake();
+  if(S.energy<8){sfx('no');say('好累…先睡一会儿吧',1800);return}
+  closeTray();stopClip();S.energy=clamp(S.energy-5,0,100);
+  const n=4+Math.round((100-S.clean)/14),AN=['head','head','belly','belly','belly','top','mouth'];
+  BATH={phase:'scrub',total:n,dirt:[],foam:[],down:false,lx:0,ly:0,acc:0,rinseT:0,dropT:0,shower:null};
+  for(let i=0;i<n;i++){
+    const el=document.createElement('div'),sz=rnd(44,70);el.className='dirt';el.style.width=el.style.height='calc(var(--u)*'+sz+')';stage.appendChild(el);
+    BATH.dirt.push({el,an:AN[i%AN.length],dx:rnd(-70,70),dy:rnd(-60,60),hp:1,sz});
+  }
+  setExpr('happy',1200);jump(5);sfx('splash');say('洗香香咯！用手指擦擦脏的地方～',2600);gHud.style.display='block';bathMsg();
+}
+function bathPointer(e,down){
+  const B=BATH;if(!B)return;const r=cv.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,u=cw/540;
+  if(down){B.down=true;B.lx=px;B.ly=py;return}
+  if(!B.down||B.phase!=='scrub'){B.lx=px;B.ly=py;return}
+  const d=Math.hypot(px-B.lx,py-B.ly);B.lx=px;B.ly=py;if(d<1)return;
+  B.acc+=d;if(B.acc>60*u){B.acc=0;fx('🫧',1,{x:px,y:py},.35);sfx('scrub');kick('roll',now()%2?1.4:-1.4);if(!CL.cur)setExpr('laugh',500)}
+  for(let i=B.dirt.length-1;i>=0;i--){const t=B.dirt[i],a=anchor(t.an),dx=px-(a.x+t.dx*u),dy=py-(a.y+t.dy*u);
+    if(Math.hypot(dx,dy)<(t.sz*.5+34)*u){t.hp-=d/(230*u);
+      if(t.hp<=0){B.dirt.splice(i,1);t.el.className='foamb';t.el.style.opacity=1;t.el.style.transform='';B.foam.push(t);sfx('pop');SP.sq.v=.08;fx('✨',2,{x:px,y:py},.4);S.joy=clamp(S.joy+1.5,0,100);gainXP(.4);
+        if(!B.dirt.length){B.phase='ready';showShower();say('好干净！点一下淋浴冲掉泡泡～',2600);sfx('level');setExpr('yum',1400)}
+        else if(B.dirt.length%3===0)say(pick(['舒服～','好痒哈哈','再擦擦！','泡泡好多！']),900)}
+      else{t.el.style.opacity=.3+.7*t.hp;t.el.style.transform='translate(-50%,-50%) scale('+(.65+.35*t.hp)+')'}}}
+  bathMsg();
+}
+function showShower(){
+  const el=document.createElement('div');el.className='col';el.innerHTML='<i>🚿</i>';el.style.left=cw*.5+'px';el.style.top=ch*.2+'px';el.style.fontSize='calc(var(--u)*70)';
+  el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();audioInit();if(BATH&&BATH.phase==='ready')startRinse()});
+  stage.appendChild(el);BATH.shower=el;
+}
+function startRinse(){
+  const B=BATH;B.phase='rinse';B.rinseT=1.7;sfx('splash');setExpr('laugh',1800);jump(5);giggle();
+  if(B.shower){const s=B.shower;s.style.opacity=0;setTimeout(()=>s.remove(),300)}
+  for(const f of B.foam){f.el.style.transition='opacity 1.4s,transform 1.4s';f.el.style.opacity=0;f.el.style.transform='translate(-50%,-30%) scale(1.3)'}
+  bathMsg();
+}
+function bathUpdate(dt){
+  const B=BATH,u=cw/540;
+  for(const t of B.dirt.concat(B.foam)){const a=anchor(t.an);t.el.style.left=(a.x+t.dx*u)+'px';t.el.style.top=(a.y+t.dy*u)+'px'}
+  if(B.phase==='rinse'){B.rinseT-=dt;B.dropT-=dt;
+    if(B.dropT<=0){B.dropT=.09;fx('💧',2,{x:cw*(.3+Math.random()*.4),y:ch*.22},.8);if(Math.random()<.4)sfx('scrub')}
+    if(B.rinseT<=0)finishBath()}
+}
+function finishBath(){
+  const B=BATH,coins=5+Math.round(B.total/2);
+  S.clean=100;S.coins+=coins;S.joy=clamp(S.joy+15,0,100);S.bathed=(S.bathed||0)+1;gainXP(5);
+  endBath();sfx('level');setExpr('love',1800);jump(8);fx('✨',10,'head',1.2);fx('❤️',4,'belly');setTimeout(ola,300);say('香喷喷～谢谢你！',2400);
+  gEnd.innerHTML='<h2>🛁 洗香香啦！</h2><p>洗掉了 '+B.total+' 处脏污</p><p>🪙 +'+coins+'　开心 +15　清洁 100%</p><div class="go2" data-a="ok">好的</div>';
+  gEnd.style.display='block';save();
+}
+function endBath(){
+  if(!BATH)return;for(const t of BATH.dirt.concat(BATH.foam))t.el.remove();if(BATH.shower)BATH.shower.remove();
+  BATH=null;gHud.style.display='none';bbarEl.style.display='none';
+}
+
 /* ================= 出门玩 outings ================= */
 const tripEl=$('#trip'),homeEl=$('#home'),fadeEl=$('#fade');
 const DEST={
@@ -563,7 +638,8 @@ $('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$(
 /* ================= main update ================= */
 let T=0,idleT=rnd(5,9),zT=0,night=S.sleeping?1:0,eyeClose=0,lie=S.sleeping?1:0;
 /* lying on the bed: [half the body length, half the body thickness] per character (the body is rotated 90° about its feet, head to the pillow) */
-const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.95],fish:[1.65,.8,.78],cat:[1.5,1.1,.8],mouse:[1.9,1.15,.75],poop:[1.55,1.2,.72]}; // + a little scale so wide bodies fit the bed
+const BASE={poop:.8,mouse:.78},SHK={poop:[1.55,1.9],mouse:[.85,.85]};
+const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.95],fish:[1.65,.8,.78],cat:[1.5,1.1,.8],mouse:[1.9,1.15,.75],poop:[1.6,1.45,.6]}; // + a little scale so wide bodies fit the bed
 const sm=(cur,tgt,sp,dt)=>cur+(tgt-cur)*(1-Math.exp(-sp*dt));
 
 function update(dt){
@@ -585,6 +661,9 @@ function update(dt){
   talkUpdate();
   if(G)gameUpdate(dt);
   if(OUT)outUpdate(dt);
+  if(BATH)bathUpdate(dt);
+  if(started&&!BATH)S.clean=clamp(S.clean-dt*.03*(S.sleeping?.3:1),0,100);
+  bathK=sm(bathK,BATH?1:0,5,dt);BATHO.update(T,bathK);
 
   // expression targets
   const E=EX[curExpr()];
@@ -632,9 +711,9 @@ function update(dt){
   const tilt=A.tilt+shake*.6+Math.sin(T*.7)*.01;
   frog.scale.set(1+sq*.45+A.puff*.3,1-sq*.5,1+sq*.45+A.puff*.3);
   const LB=LIE[CUR]||LIE.frog;
-  const sL=1+eL*(LB[2]-1);
-  frog.position.y=J.y+ha*.08*pulse+eL*(BED.top+LB[1]*sL);
-  frog.rotation.z=(G?G.lean||0:0)+SP.roll.v*.08+shake+ha*.035*Math.sin(ph*.5)+(playT>0?Math.sin(T*8)*.08:0);
+  const base=BASE[CUR]||1,sL=base+eL*(LB[2]-base);   // total scale: 奶屎 is a big model, shown a bit smaller
+  frog.position.y=J.y+ha*.08*pulse+eL*(BED.top+LB[1]*sL)-.34*bathK;
+  frog.rotation.z=(G?G.lean||0:0)+SP.roll.v*.08+shake+ha*.035*Math.sin(ph*.5)+(playT>0?Math.sin(T*8)*.08:0)+Math.sin(T*2.2)*.03*bathK;
   frog.rotation.y=((playT>0?Math.sin(T*3)*.5:0)+look.x*.12)*(1-eL);
   frog.rotation.z+=eL*Math.PI/2;frog.scale.multiplyScalar(sL);
   if(eL>.001||(!G&&(frog.position.x!==0||frog.position.z!==0))){frog.position.x=eL*(BED.cx+LB[0]*sL);frog.position.z=eL*(BED.z+.05)}
@@ -649,7 +728,7 @@ function update(dt){
   {const u=clamp(Math.max(A.u,bl),0,1),l=clamp(Math.max(A.l,bl*.6),0,1),mo=Math.max(0,A.mo*(1-.28*ha*pulse));
    FR.paint({lx:clamp(look.x*.9+A.lx,-1,1),ly:clamp(look.y*.8+A.ly,-1,1),u,l,sl:A.sl,arc:A.arc,mo,sm:A.sm,te:A.te,tg:A.tg,bl:A.bl,pup:A.pup});}
   // shadow
-  const gs=clamp(1-J.y*.18,.4,1);shadow.position.x=frog.position.x;shadow.scale.set(2.8*gs*(1+sq*.3),2.0*gs,1);shadow.material.opacity=.9*gs*(1-eL);
+  const gs=clamp(1-J.y*.18,.4,1);shadow.position.x=frog.position.x;{const k=SHK[CUR]||[1,1];shadow.scale.set(2.8*gs*(1+sq*.3)*k[0],2.0*gs*k[1],1)}shadow.material.opacity=.9*gs*(1-eL)*(1-bathK);
   // night
   night=sm(night,S.sleeping?1:0,3,dt);
   hemi.intensity=lerp(1.0,.55,night);key.intensity=lerp(2.3,.7,night);fill.intensity=lerp(.7,.2,night);rim.intensity=lerp(1.1,.5,night);
@@ -663,11 +742,11 @@ function update(dt){
   if(toastEl.style.display==='block'&&now()>toastUntil)toastEl.style.display='none';
   hud();
 }
-const hb=[$('#b1'),$('#b2'),$('#b3')],lvEl=$('#lv'),xpEl=$('#xp'),coinEl=$('#coins'),btnEls=[...document.querySelectorAll('.btn')];
+const hb=[$('#b1'),$('#b2'),$('#b3'),$('#b4')],lvEl=$('#lv'),xpEl=$('#xp'),coinEl=$('#coins'),btnEls=[...document.querySelectorAll('.btn')];
 function hud(){
-  [S.hunger,S.joy,S.energy].forEach((v,i)=>{hb[i].style.width=Math.max(6,v)+'%';hb[i].style.filter=v<25?'hue-rotate(-30deg) saturate(2)':''});
+  [S.hunger,S.joy,S.energy,S.clean].forEach((v,i)=>{hb[i].style.width=Math.max(6,v)+'%';hb[i].style.filter=v<25?'hue-rotate(-30deg) saturate(2)':''});
   lvEl.textContent='Lv.'+lv();xpEl.style.width=(S.xp%60)/60*100+'%';coinEl.textContent='🪙 '+Math.floor(S.coins);
-  btnEls[0].classList.toggle('on',trayEl.classList.contains('show'));btnEls[1].classList.toggle('on',talk.state!=='idle');btnEls[3].classList.toggle('on',wardEl.classList.contains('show'));btnEls[4].classList.toggle('on',!!G);btnEls[5].classList.toggle('on',!!OUT||tripEl.classList.contains('show'));btnEls[6].classList.toggle('on',S.sleeping);
+  btnEls[0].classList.toggle('on',trayEl.classList.contains('show'));btnEls[1].classList.toggle('on',talk.state!=='idle');btnEls[3].classList.toggle('on',!!BATH);btnEls[4].classList.toggle('on',wardEl.classList.contains('show'));btnEls[5].classList.toggle('on',!!G);btnEls[6].classList.toggle('on',!!OUT||tripEl.classList.contains('show'));btnEls[7].classList.toggle('on',S.sleeping);
   trayEl.querySelectorAll('.food').forEach((el,i)=>el.classList.toggle('no',S.coins<FOODS[i].c));
 }
 
@@ -675,7 +754,7 @@ let last=performance.now();
 function frame(t){const dt=Math.min(.05,(t-last)/1000);last=t;update(dt);renderer.render(scene,camera);requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
 
-window.__naiwa={S,CH,goOut,goHome,get OUT(){return OUT},applyWear,startGame,get G(){return G},CL,giggle,catchphrase,andy,setChar,get CUR(){return CUR},EGG,FRG,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
+window.__naiwa={startBath,get BATH(){return BATH},S,CH,goOut,goHome,get OUT(){return OUT},applyWear,startGame,get G(){return G},CL,giggle,catchphrase,andy,setChar,get CUR(){return CUR},EGG,FRG,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
 $('#go').textContent='点击领养';
 }
 setTimeout(init,60);

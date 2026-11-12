@@ -10,8 +10,9 @@ A portrait 3D virtual-pet web game (Talking-Tom style) with two characters you c
 - `node tools/mkassets.cjs` regenerates `assets.js` (model, textures, voice clips) from `assets/`
 
 ## Gameplay
-- Six characters (tap the round button at the top right): 🐸 奶蛙, 🥚 奶蛋, 🐟 奶鱼, 🐱 奶猫, 🐭 奶鼠, 💩 奶屎. Each has its own look, voice line and outfit.
+- Six characters (tap the round button at the top right): 🐸 奶蛙, 🥚 奶蛋, 🐟 奶鱼, 🐱 奶猫, 🐭 奶鼠, 💩 奶屎 (the supplied rigged NaiShi model: `tools/mknaishi.mjs <glb>` packs it, `src/naishi.js` drives its bones). Each has its own look, voice line and outfit.
 - 👗 换装 (dress-up): buy hats, glasses and neckwear with coins (13 items, each character keeps its own outfit).
 - 🧺 接接乐: 30-second catch game — slide your pet left/right to catch food, dodge chili peppers and bombs, earn coins.
 - Poke / rub / feed / play / sleep as before.
+- 🛁 洗澡: your pet hops into a bathtub covered in dirt spots (more spots the longer since the last bath). Drag a finger over the spots to scrub them into foam, then tap the 🚿 shower to rinse. Earns coins, joy and xp, costs 5 energy; cleanliness slowly drops over time.
 - 🚪 出门: take your pet out to the 公园 / 海边 / 雪地 for 45 seconds (costs 10 energy). Tap the emoji that pop up around the pet to collect them for coins; a rare 🎁 gives a free accessory. Tap 🏠 回家 any time to go back.
