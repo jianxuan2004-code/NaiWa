@@ -36,12 +36,7 @@ export function buildEgg(){
   const hm=new THREE.MeshBasicMaterial({visible:false}),hit=new THREE.Mesh(g,hm);hit.userData.region='egg';inner.add(hit);
   const regionOf=l=>l.y>1.75?'head':'belly';
 
-  /* ---- nose bridge + beak ---- */
-  const beakMat=new THREE.MeshPhysicalMaterial({color:BEAK,...params});
-  const bridge=new THREE.Mesh(new THREE.SphereGeometry(1,24,18),new THREE.MeshPhysicalMaterial({color:SKIN,...params}));
-  bridge.scale.set(.055,.12,.03);bridge.position.set(0,1.93,surfZ(0,1.93)-.004);inner.add(bridge);
-  const beak=new THREE.Group();beak.position.set(0,1.835,surfZ(0,1.835)-.01);inner.add(beak);
-  const beakM=new THREE.Mesh(new THREE.SphereGeometry(1,32,20),beakMat);beakM.scale.set(.24,.05,.16);beakM.position.z=.04;beak.add(beakM);
+  /* ---- (no nose; the beak is painted flat onto the face below) ---- */
 
   /* ---- face decal: canvas painted onto a thin grid hugging the egg surface ---- */
   const X0=-.8,X1=.8,Y0=1.4,Y1=2.5,SC=400,CW=Math.round((X1-X0)*SC),CH=Math.round((Y1-Y0)*SC);
@@ -87,12 +82,12 @@ export function buildEgg(){
     if(mo>.05){const hw=(.12+.12*mo)*(1+.15*Math.max(0,P.sm)),cr=.035*P.sm,dep=.05+.19*mo;
       cx.fillStyle='#3c1510';cx.beginPath();cx.moveTo(px(-hw),py(y0+cr));cx.quadraticCurveTo(px(0),py(y0-dep*2),px(hw),py(y0+cr));cx.quadraticCurveTo(px(0),py(y0+.012),px(-hw),py(y0+cr));cx.closePath();cx.fill();
       if(mo>.5){cx.save();cx.clip();cx.fillStyle='#d8656c';cx.beginPath();cx.ellipse(px(0),py(y0-dep*1.05),hw*.55*SC,.05*SC,0,0,Math.PI*2);cx.fill();cx.restore()}}
-    else{ // closed: a thin line under the beak (curved by mood)
-      cx.strokeStyle='rgba(120,78,28,.6)';cx.lineWidth=2;cx.lineCap='round';cx.beginPath();
-      for(let i=0;i<=14;i++){const x=-.13+.26*i/14,y=y0-.012+P.sm*.018*(x*x)/.0169-P.sm*.012;i?cx.lineTo(px(x),py(y)):cx.moveTo(px(x),py(y))}cx.stroke()}
+    // the beak: a flat, thin tan lip with a darker lower edge, painted on the surface (lifts a little as the mouth opens)
+    {const yb=1.838+mo*.03,hw=.215,tip=yb+.006+P.sm*.012,low=yb-.034+P.sm*.004;
+     const g2=cx.createLinearGradient(0,py(yb+.03),0,py(low));g2.addColorStop(0,'#f6d472');g2.addColorStop(1,'#d9a64e');
+     cx.fillStyle=g2;cx.beginPath();cx.moveTo(px(-hw),py(tip));cx.quadraticCurveTo(px(0),py(yb+.075),px(hw),py(tip));cx.quadraticCurveTo(px(0),py(low-.02),px(-hw),py(tip));cx.closePath();cx.fill();
+     cx.strokeStyle='rgba(125,75,15,.85)';cx.lineWidth=3;cx.lineCap='round';cx.beginPath();cx.moveTo(px(-hw),py(tip));cx.quadraticCurveTo(px(0),py(low-.02),px(hw),py(tip));cx.stroke()}
     tex.needsUpdate=true;
-    // the beak lifts a little as the mouth opens
-    beak.position.y=1.835+mo*.03;beak.rotation.x=-mo*.28;
   }
   paint({u:.08,l:0,sl:0,arc:0,mo:0,sm:.5,bl:0,lx:0,ly:0});
 
