@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {buildFrog} from './model.js';
+import {buildEgg} from './egg.js';
 function init(){
 
 /* ================= helpers ================= */
@@ -72,11 +73,11 @@ const shTex=canvasTex(128,128,(g,w,h)=>{const r=g.createRadialGradient(64,64,0,6
 const shadow=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:shTex,transparent:true,depthWrite:false}));shadow.rotation.x=-Math.PI/2;shadow.position.y=.02;scene.add(shadow);
 
 /* ================= the 奶蛙 model (seamless skinned mesh, see frog.js) ================= */
-const FR=buildFrog();
-const frog=FR.group;scene.add(frog);
-const B={head:FR.face,spine:FR.body},UN=FR.uniforms,HX=0,HY=0,HZ=0;
-const YM=2.73; // mouth height (rest pose) used for screen anchors
-const hitMeshes=FR.colliders;
+const FRG=buildFrog();scene.add(FRG.group);
+FRG.anchors={head:[FRG.face,[0,3.0,.4]],mouth:[FRG.face,[0,2.73,.5]],belly:[FRG.body,[0,1.4,.9]],feet:[FRG.group,[0,.1,.4]],top:[FRG.face,[0,3.35,.1]]};
+const EGG=buildEgg();scene.add(EGG.group);EGG.group.visible=false;
+// the character currently shown (everything below talks to FR / frog / UN, which setChar() re-points)
+let CUR='frog',FR=FRG,frog=FRG.group,UN=FRG.uniforms,hitMeshes=FRG.colliders;
 
 /* ================= animation params ================= */
 // arms: [shoulderX (neg=forward), shoulderZ (+out), elbowX (neg=bend forward), elbowZ (neg=inward)], relative to the natural hanging pose
@@ -161,24 +162,32 @@ function loadClips(){if(CL.loading||!AC)return;CL.loading=true;const S0=window.A
 function stopClip(){if(CL.cur){const c=CL.cur;CL.cur=null;c.s.onended=null;try{c.s.stop()}catch(e){}}}
 function playClip(k,rate=1,gain=1.5,chain=null){if(!AC||muted||!CL.buf[k])return 0;stopClip();
   const s=AC.createBufferSource(),g=AC.createGain(),an=AC.createAnalyser();an.fftSize=512;s.buffer=CL.buf[k];s.playbackRate.value=rate;g.gain.value=gain;s.connect(an);an.connect(g);g.connect(master);
-  const c=CL.cur={k,s,an,lv:0,chain};s.onended=()=>{if(CL.cur===c){CL.cur=null;if(c.chain==='catch')catchphrase()}};s.start();return CL.buf[k].duration/rate}
+  const c=CL.cur={k,s,an,lv:0,chain};s.onended=()=>{if(CL.cur===c){CL.cur=null;if(c.chain==='sig')signature()}};s.start();return CL.buf[k].duration/rate}
 function giggle(){ // the real laugh; falls back to the synth giggle while the clips are still decoding
   if(CL.cur)return; // don't cut off a laugh or the catchphrase that is already playing
-  CL.n++;CL.flip=!CL.flip;const d=playClip(CL.flip?'laugh1':'laugh2',rnd(.97,1.04),1.5,CL.n%3===0?'catch':null);
+  CL.n++;CL.flip=!CL.flip;const d=playClip(CL.flip?'laugh1':'laugh2',rnd(.97,1.04),1.5,CL.n%3===0?'sig':null);
   if(!d){sfx('giggle');return}setExpr('laugh',d*1000+120)}
 function catchphrase(extra='',keep=false){const d=playClip('catch',1,1.6);if(!d){say('嘎嘎提拉虾！'+extra,2200);return}
   if(!keep)setExpr('talk',d*1000+250);say('嘎嘎提拉虾！'+extra,d*1000+900);kick('nod',-4);kick('sq',4);jump(6);fx('✨',6,'head')}
+let lastAndy=0;
+// 奶蛋's only line: "安~迪！" (voice clip from the supplied video)
+function andy(keep=false){lastAndy=now();const d=playClip('andy',1,1.6);
+  bubble={t:'安~迪！',until:now()+(d?d*1000+900:1600)};bubbleEl.textContent='安~迪！';
+  if(!d)return;if(!keep)setExpr('happy',d*1000+250);kick('sq',3);kick('roll',now()%2?4:-4);fx('✨',5,'head')}
+function signature(extra='',keep=false){if(CUR==='egg')andy(keep);else catchphrase(extra,keep)}
 $('#mute').onclick=()=>{audioInit();muted=!muted;if(muted)stopClip();$('#mute').textContent=muted?'🔇':'🔊'};
 
 /* ================= DOM fx ================= */
 const bubbleEl=$('#bubble'),toastEl=$('#toast'),trayEl=$('#tray');
 let bubble=null,toastUntil=0;
-function say(t,ms=2200){bubble={t,until:now()+ms};bubbleEl.textContent=t}
+function say(t,ms=2200){
+  if(CUR==='egg'){const laugh=/哈哈|嘻嘻|咯咯|好痒/.test(t);t=laugh?'哈哈哈！':'安~迪！';if(!laugh&&!CL.cur&&now()-lastAndy>1400)andy(true)}
+  bubble={t,until:now()+ms};bubbleEl.textContent=t}
 function showToast(t,ms=2200){toastEl.textContent=t;toastEl.style.display='block';toastUntil=now()+ms}
 const proj=new THREE.Vector3();
 function toScreen(v){proj.copy(v).project(camera);return{x:(proj.x*.5+.5)*cw,y:(-proj.y*.5+.5)*ch}}
 function anchor(name){
-  const tb={head:[B.head,[0,3.0,.4]],mouth:[B.head,[0,YM,.5]],belly:[B.spine,[0,1.4,.9]],feet:[frog,[0,.1,.4]],top:[B.head,[0,3.35,.1]]}[name]||[frog,[0,1.5,.5]];
+  const tb=FR.anchors[name]||[frog,[0,1.5,.5]];
   _v.set(...tb[1]);tb[0].localToWorld(_v);return toScreen(_v);
 }
 function fx(emoji,n,anc='head',spread=1){
@@ -199,7 +208,7 @@ function pick3(){
   if(!hit)return null;
   let region=hit.object.userData.region;
   const local=frog.worldToLocal(hit.point.clone());
-  if(region==='belly'&&local.y>1.95)region='body';
+  if(FR.regionOf)region=FR.regionOf(local);else if(region==='belly'&&local.y>1.95)region='body';
   return{region,local,point:hit.point};
 }
 let touch=null,rubAcc=0,pokeCount=0,pokeT=0,lastSay=0,started=false;
@@ -259,7 +268,7 @@ document.querySelectorAll('.btn').forEach(b=>b.addEventListener('pointerdown',e=
 let playT=0;
 function play(){
   if(S.sleeping)wake();if(S.energy<15){sfx('no');say('好累…想睡觉',1800);return}
-  playT=3.4;setExpr('play',3400);S.energy=clamp(S.energy-10,0,100);S.joy=clamp(S.joy+18,0,100);gainXP(4);fx('⭐',16,'head');jump(8.5);if(CL.buf.catch)catchphrase('一起玩！',true);else{say('一起玩！耶！',2400);sfx('level')}
+  playT=3.4;setExpr('play',3400);S.energy=clamp(S.energy-10,0,100);S.joy=clamp(S.joy+18,0,100);gainXP(4);fx('⭐',16,'head');jump(8.5);if(CL.buf[CUR==='egg'?'andy':'catch'])signature('一起玩！',true);else{say('一起玩！耶！',2400);sfx('level')}
 }
 /* food dragging */
 const ghost=$('#ghost');let drag=null,eatSeq=null;
@@ -287,6 +296,7 @@ function feed(f,from){
 let mic={},talk={state:'idle'};
 async function startTalk(){
   if(talk.state!=='idle')return;if(S.sleeping)wake();
+  if(CUR==='egg'){andy();return}
   try{mic.stream=mic.stream||await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){showToast('需要麦克风权限才能复读哦',2600);return}
   audioInit();if(!AC)return;
   const src=AC.createMediaStreamSource(mic.stream),an=AC.createAnalyser();an.fftSize=1024;src.connect(an);
@@ -306,12 +316,29 @@ function talkUpdate(){
   if(talk.state==='listen'){const m=level(talk.an),t=now();if(m>14){talk.heard=true;talk.lastVoice=t}
     const el=t-talk.t0;if((talk.heard&&t-talk.lastVoice>900)||el>6000||(!talk.heard&&el>4500)){talk.state='stop';exprUntil=0;talk.mr.stop()}}
   else if(talk.state==='speak'){ov.mo=clamp(level(talk.an)/45,0,1)}
-  if(CL.cur){const t=now(),dt=Math.min(.1,(t-(CL.t||t))/1000);CL.t=t;const c=CL.cur,l=clamp(level(c.an)/80,0,1);const sp=c.k==='catch';c.lv+=(l-c.lv)*(1-Math.exp(-(l>c.lv?(sp?22:5):(sp?12:2.2))*dt)); // laugh: slow envelope so the mouth doesn't flutter; speech: faster so syllables read
+  if(CL.cur){const t=now(),dt=Math.min(.1,(t-(CL.t||t))/1000);CL.t=t;const c=CL.cur,l=clamp(level(c.an)/80,0,1);const sp=c.k==='catch'||c.k==='andy';c.lv+=(l-c.lv)*(1-Math.exp(-(l>c.lv?(sp?22:5):(sp?12:2.2))*dt)); // laugh: slow envelope so the mouth doesn't flutter; speech: faster so syllables read
     ov.mo=sp?clamp(.08+c.lv*1.15,0,1):clamp(.25+c.lv*.95,0,1)}else CL.t=0
 }
 
+/* ================= character switch (奶蛙 / 奶蛋) ================= */
+const SAVE_CH='naiwa3d-char';
+function setChar(name,quiet){
+  if(name===CUR&&!quiet)return;
+  const next=name==='egg'?EGG:FRG;
+  FRG.group.visible=next===FRG;EGG.group.visible=next===EGG;
+  for(const g of[FRG.group,EGG.group]){g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1)}
+  CUR=name;FR=next;frog=next.group;UN=next.uniforms;hitMeshes=next.colliders;
+  try{localStorage.setItem(SAVE_CH,name)}catch(e){}
+  document.querySelectorAll('#chars .ch').forEach(b=>b.classList.toggle('on',b.dataset.c===name));
+  stopClip();touch=null;dentTarget=0;
+  if(!quiet){setExpr('happy',1200);jump(7.5);fx('✨',8,'head');
+    if(name==='egg'){say('安~迪！',2000)}else{say('我是奶蛙！',2000)}}
+}
+document.querySelectorAll('#chars .ch').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();audioInit();sfx('tap');setChar(b.dataset.c)}));
+try{const c=localStorage.getItem(SAVE_CH);if(c==='egg')setChar('egg',true)}catch(e){}
+
 /* ================= start overlay ================= */
-$('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$('#start').style.display='none';started=true;sfx('level');say('哇～你来啦！我是奶蛙！',2600);setExpr('happy',1600);jump(8)});
+$('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$('#start').style.display='none';started=true;sfx('level');say(CUR==='egg'?'安~迪！':'哇～你来啦！我是奶蛙！',2600);setExpr('happy',1600);jump(8)});
 
 /* ================= main update ================= */
 let T=0,idleT=rnd(5,9),zT=0,night=S.sleeping?1:0,eyeClose=0;
@@ -328,7 +355,7 @@ function update(dt){
       if(m==='sad')say(pick(['肚肚饿了…🍖','咕噜噜～想吃东西','给我点吃的嘛']),2400);
       else if(m==='angry')say(pick(['哼！没人陪我玩','不开心！摸摸我','哼～']),2400);
       else{const r=Math.random();
-        if(r<.3){jump(8);if(CL.buf.catch&&Math.random()<.5)catchphrase();else{setExpr('happy',900);say(pick(['耶！','奶～','我是奶蛙！']),1500)}}
+        if(r<.3){jump(8);if(CL.buf[CUR==='egg'?'andy':'catch']&&Math.random()<.5)signature();else{setExpr('happy',900);say(pick(['耶！','奶～','我是奶蛙！']),1500)}}
         else if(r<.55)say(pick(['摸摸我嘛～','今天也要开心！','咕呱～','戳戳我的肚子试试？']),2400);
         else if(r<.8){kick('roll',5);setExpr('confused',1400);say('嗯？',1000)}
         else{setExpr('yum',1200);say('😋',1000)}}}}
@@ -418,7 +445,7 @@ let last=performance.now();
 function frame(t){const dt=Math.min(.05,(t-last)/1000);last=t;update(dt);renderer.render(scene,camera);requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
 
-window.__naiwa={CL,giggle,catchphrase,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
+window.__naiwa={CL,giggle,catchphrase,andy,setChar,get CUR(){return CUR},EGG,FRG,snap(n){const E=EX[n];for(const k of KEYS)A[k]=E[k];A.ar=[...E.ar];A.al=[...E.al];setExpr(n,600000)},S,A,FR,EX,setExpr,jump,kick,SP,camera,frog,say,feed,FOODS,get started(){return started},set started(v){started=v}};
 $('#go').textContent='点击领养';
 }
 setTimeout(init,60);
