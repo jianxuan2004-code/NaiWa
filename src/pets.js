@@ -4,6 +4,7 @@ import {skinGarment} from './garments.js';
 import {buildNaiShi} from './naishi.js';
 import {buildNaiShu} from './naishu.js';
 import {buildNaiMao} from './naimao.js';
+import {buildNaiYu} from './naiyu.js';
 
 /* 奶鱼 / 奶猫 / 奶鼠 / 奶屎: smooth clay-toy bodies modelled to the reference pictures (tools/mkpets.mjs turns blended
    signed-distance shapes into meshes). They use the same PBR textures as 奶蛙 and one shared face painter, and expose the same
@@ -215,4 +216,4 @@ function poop(){
 }
 
 /* 奶屎 is the supplied rigged NaiShi model (src/naishi.js); the procedural poop() above is kept only as a fallback */
-export function buildPet(kind){return kind==='poop'?buildNaiShi():kind==='mouse'?buildNaiShu():kind==='cat'?buildNaiMao():({fish,cat,mouse,poop})[kind]()}
+export function buildPet(kind){return kind==='poop'?buildNaiShi():kind==='mouse'?buildNaiShu():kind==='cat'?buildNaiMao():kind==='fish'?buildNaiYu():({fish,cat,mouse,poop})[kind]()}
