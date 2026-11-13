@@ -378,6 +378,7 @@ function applyWear(){
       wearObjs[ch][sl.id]=null;
       if(id&&ITEM[id]){let o=buildItem(id,ch);if(o.userData.body&&CH[ch].skinGarment)o=CH[ch].skinGarment(o);fr.add(o);wearObjs[ch][sl.id]=o}}}
   FRG.setArmPad(GARMENT_PAD[S.wear.frog&&S.wear.frog.body]||0);
+  if(CH.mouse.setArmPad)CH.mouse.setArmPad(GARMENT_PAD[S.wear.mouse&&S.wear.mouse.body]||0);
 }
 function renderWard(){
   wTabs.innerHTML=SLOTS.map(sl=>'<div class="wtab'+(sl.id===wTab?' on':'')+'" data-s="'+sl.id+'">'+sl.name+'</div>').join('');
@@ -638,8 +639,8 @@ $('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$(
 /* ================= main update ================= */
 let T=0,idleT=rnd(5,9),zT=0,night=S.sleeping?1:0,eyeClose=0,lie=S.sleeping?1:0;
 /* lying on the bed: [half the body length, half the body thickness] per character (the body is rotated 90° about its feet, head to the pillow) */
-const BASE={poop:.8,mouse:.78},SHK={poop:[1.55,1.9],mouse:[.85,.85]};
-const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.95],fish:[1.65,.8,.78],cat:[1.5,1.1,.8],mouse:[1.9,1.15,.75],poop:[1.6,1.45,.6]}; // + a little scale so wide bodies fit the bed
+const BASE={poop:.8,mouse:.64,cat:.7},SHK={poop:[1.55,1.9],mouse:[.8,.8],cat:[1.1,1.4]};
+const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.95],fish:[1.65,.8,.78],cat:[.3,0,.62],mouse:[1.9,1.15,.75],poop:[1.6,1.45,.6]}; // + a little scale so wide bodies fit the bed
 const sm=(cur,tgt,sp,dt)=>cur+(tgt-cur)*(1-Math.exp(-sp*dt));
 
 function update(dt){
@@ -712,11 +713,12 @@ function update(dt){
   frog.scale.set(1+sq*.45+A.puff*.3,1-sq*.5,1+sq*.45+A.puff*.3);
   const LB=LIE[CUR]||LIE.frog;
   const base=BASE[CUR]||1,sL=base+eL*(LB[2]-base);   // total scale: 奶屎 is a big model, shown a bit smaller
-  frog.position.y=J.y+ha*.08*pulse+eL*(BED.top+LB[1]*sL)-.34*bathK;
+  const QUAD=CUR==='cat';   // the quadruped curls up on the bed with its body along it; the others lie on their backs
+  frog.position.y=J.y+ha*.08*pulse+eL*(BED.top+(QUAD?.03:LB[1]*sL))-.34*bathK;
   frog.rotation.z=(G?G.lean||0:0)+SP.roll.v*.08+shake+ha*.035*Math.sin(ph*.5)+(playT>0?Math.sin(T*8)*.08:0)+Math.sin(T*2.2)*.03*bathK;
   frog.rotation.y=((playT>0?Math.sin(T*3)*.5:0)+look.x*.12)*(1-eL);
-  frog.rotation.z+=eL*Math.PI/2;frog.scale.multiplyScalar(sL);
-  if(eL>.001||(!G&&(frog.position.x!==0||frog.position.z!==0))){frog.position.x=eL*(BED.cx+LB[0]*sL);frog.position.z=eL*(BED.z+.05)}
+  if(QUAD)frog.rotation.y-=eL*Math.PI/2;else frog.rotation.z+=eL*Math.PI/2;frog.scale.multiplyScalar(sL);
+  if(eL>.001||(!G&&(frog.position.x!==0||frog.position.z!==0))){frog.position.x=eL*(BED.cx+(QUAD?LB[0]:LB[0]*sL));frog.position.z=eL*(BED.z+.05)}
   // skeleton (supplied rigged model, driven with world-axis deltas)
   const sway=Math.sin(T*1.6)*.03;
   const aR=[...A.ar],aL=[...A.al];

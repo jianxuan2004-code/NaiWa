@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {skinMaterial,patchUV} from './skin.js';
 
 /* 奶屎 (NaiShi): the supplied rigged soft-serve model (tools/mknaishi.mjs packs the GLB into assets/pets/naishi.json).
    15-bone skeleton (Root, Base, three coils, Head, two tip bones, eyes + pupils, three mouth corners). The game's pose parameters
@@ -50,7 +51,8 @@ export function buildNaiShi(){
   const meshes={};
   for(const p of J.parts){
     const {g,pos}=decode(p);geos[p.n]=g;allPos.push(pos);if(p.kind==='body')bodyPos=pos;
-    const mat=MAT(p,p.kind==='mouth'?{side:THREE.DoubleSide,clearcoat:0}:{});
+    if(p.kind==='body')patchUV(g,[0,1.65,3.2,3.4]);   // same PBR skin set as 奶蛙 (albedo / normal / roughness)
+    const mat=p.kind==='body'?skinMaterial(0xffffff,true,{clearcoat:.2,clearcoatRoughness:.5}):MAT(p,p.kind==='mouth'?{side:THREE.DoubleSide,clearcoat:0}:p.kind==='pupil'?{polygonOffset:true,polygonOffsetFactor:-8,polygonOffsetUnits:-8}:{});
     if(p.kind==='body'){mat.onBeforeCompile=patch;mat.customProgramCacheKey=()=>'naishi'}
     const m=new THREE.SkinnedMesh(g,mat);m.frustumCulled=false;inner.add(m);m.bind(skeleton,new THREE.Matrix4());meshes[p.n]=m;
   }
@@ -104,7 +106,9 @@ export function buildNaiShi(){
   /* ---- pose ---- */
   const dq=new THREE.Quaternion(),de=new THREE.Euler();
   const R=(n,x,y,z)=>{const i=J.bones.findIndex(b=>b.n===n);de.set(x,y,z,'XYZ');dq.setFromEuler(de);bones[i].quaternion.copy(rest[i].q).multiply(dq)};
+  let infl=0;   // the body puffs out when angry; the eyes / mouth ride on it so they never sink into the skin
   const pose=P=>{
+    infl=(P.inflate||0)*1.3;for(const s of['L','R'])bones[ei[s]].position.z=rest[ei[s]].p.z+infl;
     const t=performance.now()/1000,lie=P.lie||0,k=1-.6*lie,sit=P.sit||0,ha=P.ha||0,br=Math.sin(t*2.1)*.012*(1-.5*lie);
     const lean=P.lean||0,nod=P.nod||0,yaw=P.yaw||0,roll=P.roll||0,tilt=P.tilt||0,hip=P.hip||0;
     inner.scale.y=1-.05*sit;
@@ -122,19 +126,21 @@ export function buildNaiShi(){
   const mi={L:J.bones.findIndex(b=>b.n==='Mouth.L'),C:J.bones.findIndex(b=>b.n==='Mouth.C'),R:J.bones.findIndex(b=>b.n==='Mouth.R')};
   const halfW=(mo.r[0])*1.05;let lastKey='';
   const paint=P=>{
-    const key=[P.u,P.l,P.sl,P.arc,P.mo,P.sm,P.bl,P.lx,P.ly,P.pup||1].map(v=>Math.round(v*60)).join(',');if(key===lastKey)return;lastKey=key;
+    const key=[P.u,P.l,P.sl,P.arc,P.mo,P.sm,P.bl,P.lx,P.ly,P.pup||1,infl].map(v=>Math.round(v*60)).join(',');if(key===lastKey)return;lastKey=key;
     const closed=clamp(Math.max((P.u-.08)/.92,P.l*.7),0,1),open=Math.abs(P.arc)>.35&&P.u>.9?.14:1-.9*closed;
     for(const s of['L','R']){const sgn=s==='L'?-1:1,e=bones[ei[s]],p=bones[pi[s]];
       e.scale.set(1,Math.max(.06,open),1);
       de.set(0,0,-sgn*P.sl*.45);dq.setFromEuler(de);e.quaternion.copy(rest[ei[s]].q).multiply(dq);
-      p.position.set(rest[pi[s]].p.x+P.lx*.03,rest[pi[s]].p.y-P.ly*.03,rest[pi[s]].p.z);
+      p.position.set(rest[pi[s]].p.x+P.lx*.03,rest[pi[s]].p.y-P.ly*.03,rest[pi[s]].p.z+.03+Math.hypot(P.lx,P.ly)*.02);
       const ps=P.pup||1;p.scale.set(ps,ps,1)}
     // smile / frown moves the two mouth corners (the centre dips slightly the other way)
     const sm=P.sm;
-    bones[mi.L].position.set(rest[mi.L].p.x,rest[mi.L].p.y+sm*.05,rest[mi.L].p.z);
-    bones[mi.R].position.set(rest[mi.R].p.x,rest[mi.R].p.y+sm*.05,rest[mi.R].p.z);
-    bones[mi.C].position.set(rest[mi.C].p.x,rest[mi.C].p.y-sm*.012,rest[mi.C].p.z);
+    bones[mi.L].position.set(rest[mi.L].p.x,rest[mi.L].p.y+sm*.05,rest[mi.L].p.z+infl);
+    bones[mi.R].position.set(rest[mi.R].p.x,rest[mi.R].p.y+sm*.05,rest[mi.R].p.z+infl);
+    bones[mi.C].position.set(rest[mi.C].p.x,rest[mi.C].p.y-sm*.012,rest[mi.C].p.z+infl);
     const m=clamp(P.mo,0,1);
+    mouthO.position.z=mz-.02+infl;tongueO.position.z=mz-.015+infl;
+    meshes.mouth.visible=m<=.06;
     if(m>.06){mouthO.visible=true;mouthO.scale.set(halfW*(.4+.35*m),.02+.065*m,.04);mouthO.position.y=mouthC[1]-.01-.03*m;mouthO.position.x=mouthC[0];
       tongueO.visible=m>.5;tongueO.scale.set(halfW*.3,.022,.04);tongueO.position.y=mouthC[1]-.01-.065*m}
     else{mouthO.visible=false;tongueO.visible=false}
