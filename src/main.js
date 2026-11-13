@@ -639,8 +639,8 @@ $('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$(
 /* ================= main update ================= */
 let T=0,idleT=rnd(5,9),zT=0,night=S.sleeping?1:0,eyeClose=0,lie=S.sleeping?1:0;
 /* lying on the bed: [half the body length, half the body thickness] per character (the body is rotated 90° about its feet, head to the pillow) */
-const BASE={poop:.8,mouse:.64,cat:.7,fish:.82},SHK={poop:[1.55,1.9],mouse:[.8,.8],cat:[1.1,1.4],fish:[.9,.9]};
-const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.95],fish:[1.8,.8,.7],cat:[.3,0,.62],mouse:[1.9,1.15,.75],poop:[1.6,1.45,.6]}; // + a little scale so wide bodies fit the bed
+const BASE={egg:.82,poop:.8,mouse:.64,cat:.7,fish:.82},SHK={egg:[.85,.85],poop:[1.55,1.9],mouse:[.8,.8],cat:[1.1,1.4],fish:[.9,.9]};
+const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.82],fish:[1.8,.8,.7],cat:[.3,0,.62],mouse:[1.9,1.15,.75],poop:[1.6,1.45,.6]}; // + a little scale so wide bodies fit the bed
 const sm=(cur,tgt,sp,dt)=>cur+(tgt-cur)*(1-Math.exp(-sp*dt));
 
 function update(dt){
