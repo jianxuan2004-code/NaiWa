@@ -7,7 +7,8 @@ import {buildOutdoor} from './outdoor.js';
 import {buildPet} from './pets.js';
 import {buildBed,BED} from './bed.js';
 import {buildDecor} from './room.js';
-import {buildBath} from './bath.js';
+import {buildBath,buildBathroom,SHOWER} from './bath.js';
+import {hookDirt,pickSpots,spotWorld,setDirt,SPOT_R} from './dirt.js';
 import './ui.js';
 function init(){
 
@@ -84,6 +85,7 @@ const DEC=buildDecor({WALLZ,wall,floor,skirt});scene.add(DEC.group);
 const ROOM=[wall,floor,skirt,rug,winFrame,winDay,winNight,frameG,lamp,lampLight,BEDO.group,DEC.group];
 const OD=buildOutdoor();scene.add(OD.root);
 const BATHO=buildBath();scene.add(BATHO.group);
+const BR=buildBathroom(WALLZ);scene.add(BR.group);
 
 /* ================= the 奶蛙 model (seamless skinned mesh, see frog.js) ================= */
 const FRG=buildFrog();scene.add(FRG.group);
@@ -91,14 +93,17 @@ FRG.anchors={head:[FRG.face,[0,3.0,.4]],mouth:[FRG.face,[0,2.73,.5]],belly:[FRG.
 const EGG=buildEgg();scene.add(EGG.group);EGG.group.visible=false;
 FRG.wearFrame=FRG.face;EGG.wearFrame=EGG.anchors.head[0];FIT.frog.z=FRG.faceZ;FIT.egg.z=eggSurfZ;
 FRG.bodyFrame=FRG.group;EGG.bodyFrame=EGG.wearFrame;FIT.frog.prof=FRG.prof;FIT.frog.patch=FRG.patch;FIT.frog.patchKey=FRG.patchKey;FIT.egg.patch=EGG.patch;FIT.egg.patchKey=EGG.patchKey;FIT.frog.torso=[.95,2.15];FIT.egg.prof=EGG.prof;FIT.egg.torso=[.3,1.5];
-const PETS={};for(const k of['fish','cat','mouse','poop']){const p=buildPet(k);p.group.visible=false;scene.add(p.group);p.bodyFrame=p.bodyFrame||p.wearFrame;PETS[k]=p;FIT[k]=p.fit}
+const PETS={};for(const k of['fish','cat','mouse','poop','prawn','corn']){const p=buildPet(k);p.group.visible=false;scene.add(p.group);p.bodyFrame=p.bodyFrame||p.wearFrame;PETS[k]=p;FIT[k]=p.fit}
 const CH={frog:FRG,egg:EGG,...PETS};
+for(const k in CH)hookDirt(CH[k].group,k==='corn'?1000:3000);   // mud-spot shader for the bath (inactive until a bath starts)
 const CHARS={
   frog:{icon:'🐸',name:'奶蛙'},egg:{icon:'🥚',name:'奶蛋'},
   fish:{icon:'🐟',name:'奶鱼',line:'咕噜噜～',voice:'blub',pitch:1.0},
   cat:{icon:'🐱',name:'奶猫',line:'喵～',voice:'meow',pitch:1.18},
   mouse:{icon:'🐭',name:'奶鼠',line:'奶鼠奶鼠！',voice:'squeak',clip:'mouse',pitch:1.0},
   poop:{icon:'💩',name:'奶屎',line:'噗噗～',voice:'poot',pitch:.85},
+  prawn:{icon:'🦐',name:'奶虾',line:'嗒嗒～',voice:'snap',pitch:1.05},
+  corn:{icon:'🌽',name:'奶玉米',line:'啵啵～',voice:'pop2',pitch:1.0},
 };
 // the character currently shown (everything below talks to FR / frog / UN, which setChar() re-points)
 let CUR='frog',FR=FRG,frog=FRG.group,UN=FRG.uniforms,hitMeshes=FRG.colliders;
@@ -185,6 +190,9 @@ function sfx(n){switch(n){
   case'blub':for(let i=0;i<3;i++)tone(260+i*70,.1,'sine',.32,260,i*.11);break;
   case'poot':tone(160,.22,'sawtooth',.22,-70);noise(.12,.25);break;
   case'scrub':noise(.07,.16);break;
+  case'snap':tone(1500,.04,'square',.12);tone(1900,.05,'square',.12,0,.07);tone(1300,.06,'triangle',.2,300,.15);break;
+  case'pop2':noise(.05,.3);tone(380,.1,'triangle',.3,500);tone(620,.08,'triangle',.25,300,.09);break;
+  case'shower':noise(.5,.3);tone(2400,.4,'sine',.03,-400);break;
   case'pop':tone(900,.07,'triangle',.2,500);break;
   case'splash':noise(.45,.35);tone(900,.25,'sine',.1,-400);break;}}
 /* ---- real voice clips: the frog's laugh (from the supplied videos) ---- */
@@ -243,7 +251,7 @@ const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
 function pointerNDC(e){const r=renderer.domElement.getBoundingClientRect();ndc.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1);return{px:e.clientX-r.left,py:e.clientY-r.top}}
 function pick3(){
   ray.setFromCamera(ndc,camera);
-  const hit=ray.intersectObjects(OUT?[...hitMeshes]:[...hitMeshes,...lamp.children],false)[0];
+  const hit=ray.intersectObjects((OUT||BR.group.visible)?[...hitMeshes]:[...hitMeshes,...lamp.children],false)[0];
   if(!hit)return null;
   let region=hit.object.userData.region;
   const local=frog.worldToLocal(hit.point.clone());
@@ -378,7 +386,7 @@ function applyWear(){
       wearObjs[ch][sl.id]=null;
       if(id&&ITEM[id]){let o=buildItem(id,ch);if(o.userData.body&&CH[ch].skinGarment)o=CH[ch].skinGarment(o);fr.add(o);wearObjs[ch][sl.id]=o}}}
   FRG.setArmPad(GARMENT_PAD[S.wear.frog&&S.wear.frog.body]||0);
-  for(const k of['mouse','fish'])if(CH[k].setArmPad)CH[k].setArmPad(GARMENT_PAD[S.wear[k]&&S.wear[k].body]||0);
+  for(const k of['mouse','fish','corn'])if(CH[k].setArmPad)CH[k].setArmPad(GARMENT_PAD[S.wear[k]&&S.wear[k].body]||0);
 }
 function renderWard(){
   wTabs.innerHTML=SLOTS.map(sl=>'<div class="wtab'+(sl.id===wTab?' on':'')+'" data-s="'+sl.id+'">'+sl.name+'</div>').join('');
@@ -481,59 +489,77 @@ function gamePointer(e){if(!G||G.end)return;const r=cv.getBoundingClientRect();G
 addEventListener('pointermove',gamePointer);addEventListener('pointerdown',gamePointer);
 
 /* ================= 洗澡 bath ================= */
-/* The pet sits in a tub of foam. Rub the dirty spots with your finger (drag) to scrub them into foam; once it is spotless tap the
-   shower 🚿 to rinse the foam off. Reward: coins, joy, xp and a fully clean pet. Cleanliness slowly drops over time (S.clean). */
+/* A separate tiled bathroom (the bedroom is hidden while it is shown). The pet's clothes come off, mud spots sit ON its skin (dirt.js: shader
+   spots in the mesh's rest space, so they bend and wobble with the body). Rub them with a finger to lather them up and scrub them away, then
+   tap the shower head: a stream of water sweeps from the top down and rinses the foam off. Reward: coins, joy, xp and a clean pet. */
 let BATH=null,bathK=0;const bbarEl=$('#bbar');
+const _bv=new THREE.Vector3(),_bv2=new THREE.Vector3();
 function bathMsg(){
-  if(!BATH)return;
-  bbarEl.style.display='block';bbarEl.firstChild.style.width=(BATH.phase==='scrub'?(BATH.total-BATH.dirt.length)/BATH.total*(BATH.phase==='scrub'?90:100):100)+'%';
-  gHud.textContent=BATH.phase==='scrub'?'🛁 洗澡   🫧 '+(BATH.total-BATH.dirt.length)+'/'+BATH.total:BATH.phase==='ready'?'🚿 点淋浴冲掉泡泡':'🚿 冲水中…';
+  if(!BATH)return;const B=BATH,done=B.spots.filter(t=>t.hp<=0).length;
+  bbarEl.style.display='block';bbarEl.firstChild.style.width=(B.phase==='scrub'||B.phase==='enter'?B.spots.reduce((s,t)=>s+(1-t.hp),0)/Math.max(1,B.total)*90:B.phase==='ready'?92:92+8*clamp(1-B.rinseT/3,0,1))+'%';
+  gHud.textContent=B.phase==='scrub'||B.phase==='enter'?'🛁 洗澡   🫧 '+done+'/'+B.total:B.phase==='ready'?'🚿 点一下淋浴头冲水':'🚿 冲水中…';
 }
+function spotScreen(t){spotWorld(t.spot,_bv);const s=toScreen(_bv);t.sx=s.x;t.sy=s.y;_bv2.copy(_bv);_bv2.x+=SPOT_R*frog.scale.x;t.rpx=Math.abs(toScreen(_bv2).x-s.x)}
+const setGarments=vis=>{for(const k in CH){const o=wearObjs[k]&&wearObjs[k].body;if(o)o.visible=vis}};
 function startBath(){
   if(BATH){endBath(true);return}
   if(OUT||G)return;
   if(S.sleeping)wake();
   if(S.energy<8){sfx('no');say('好累…先睡一会儿吧',1800);return}
   closeTray();stopClip();S.energy=clamp(S.energy-5,0,100);
-  const n=4+Math.round((100-S.clean)/14),AN=['head','head','belly','belly','belly','top','mouth'];
-  BATH={phase:'scrub',total:n,dirt:[],foam:[],down:false,lx:0,ly:0,acc:0,rinseT:0,dropT:0,shower:null};
-  for(let i=0;i<n;i++){
-    const el=document.createElement('div'),sz=rnd(44,70);el.className='dirt';el.style.width=el.style.height='calc(var(--u)*'+sz+')';stage.appendChild(el);
-    BATH.dirt.push({el,an:AN[i%AN.length],dx:rnd(-70,70),dy:rnd(-60,60),hp:1,sz});
-  }
-  setExpr('happy',1200);jump(5);sfx('splash');say('洗香香咯！用手指擦擦脏的地方～',2600);gHud.style.display='block';bathMsg();
+  BATH={phase:'enter',total:0,spots:[],down:false,lx:0,ly:0,acc:0,rinseT:0,dropT:0,hint:null,flow:0,sndT:0};
+  sfx('splash');gHud.style.display='block';
+  fadeTo(()=>{
+    const B=BATH;if(!B)return;
+    ROOM.forEach(o=>o.visible=false);BR.group.visible=true;setGarments(false);                // undress, move to the bathroom
+    const n=4+Math.round((100-S.clean)/14);
+    for(const sp of pickSpots(frog,n,s=>s.pos.y*(BASE[CUR]||1)+.1>.95)){const el=document.createElement('div');el.className='foamb';el.style.opacity=0;stage.appendChild(el);B.spots.push({spot:sp,hp:1,el,sx:-99,sy:-99,rpx:30})}
+    B.total=B.spots.length;B.phase='scrub';
+    setExpr('happy',1200);jump(5);say('洗香香咯！用手指擦擦脏的地方～',2600);bathMsg();
+  });
 }
 function bathPointer(e,down){
-  const B=BATH;if(!B)return;const r=cv.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,u=cw/540;
-  if(down){B.down=true;B.lx=px;B.ly=py;return}
+  const B=BATH;if(!B||B.phase==='enter')return;const r=cv.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,u=cw/540;
+  if(down){B.down=true;B.lx=px;B.ly=py;
+    if(B.phase==='ready'&&B.hint&&Math.hypot(px-B.hint.x,py-B.hint.y)<110*u)startRinse();return}
   if(!B.down||B.phase!=='scrub'){B.lx=px;B.ly=py;return}
   const d=Math.hypot(px-B.lx,py-B.ly);B.lx=px;B.ly=py;if(d<1)return;
   B.acc+=d;if(B.acc>60*u){B.acc=0;fx('🫧',1,{x:px,y:py},.35);sfx('scrub');kick('roll',now()%2?1.4:-1.4);if(!CL.cur)setExpr('laugh',500)}
-  for(let i=B.dirt.length-1;i>=0;i--){const t=B.dirt[i],a=anchor(t.an),dx=px-(a.x+t.dx*u),dy=py-(a.y+t.dy*u);
-    if(Math.hypot(dx,dy)<(t.sz*.5+34)*u){t.hp-=d/(230*u);
-      if(t.hp<=0){B.dirt.splice(i,1);t.el.className='foamb';t.el.style.opacity=1;t.el.style.transform='';B.foam.push(t);sfx('pop');SP.sq.v=.08;fx('✨',2,{x:px,y:py},.4);S.joy=clamp(S.joy+1.5,0,100);gainXP(.4);
-        if(!B.dirt.length){B.phase='ready';showShower();say('好干净！点一下淋浴冲掉泡泡～',2600);sfx('level');setExpr('yum',1400)}
-        else if(B.dirt.length%3===0)say(pick(['舒服～','好痒哈哈','再擦擦！','泡泡好多！']),900)}
-      else{t.el.style.opacity=.3+.7*t.hp;t.el.style.transform='translate(-50%,-50%) scale('+(.65+.35*t.hp)+')'}}}
+  for(const t of B.spots){if(t.hp<=0)continue;
+    if(Math.hypot(px-t.sx,py-t.sy)<t.rpx*.95+24*u){t.hp-=d/(210*u);
+      if(t.hp<=0){t.hp=0;sfx('pop');SP.sq.v=.08;fx('✨',2,{x:t.sx,y:t.sy},.4);S.joy=clamp(S.joy+1.5,0,100);gainXP(.4);
+        const left=B.spots.filter(q=>q.hp>0).length;
+        if(!left){B.phase='ready';showShowerHint();say('好干净！点一下淋浴头冲水～',2600);sfx('level');setExpr('yum',1400)}
+        else if(left%3===0)say(pick(['舒服～','好痒哈哈','再擦擦！','泡泡好多！']),900)}}}
   bathMsg();
 }
-function showShower(){
-  const el=document.createElement('div');el.className='col';el.innerHTML='<i>🚿</i>';el.style.left=cw*.5+'px';el.style.top=ch*.2+'px';el.style.fontSize='calc(var(--u)*70)';
+function showShowerHint(){
+  const h=toScreen(_bv.copy(SHOWER.head).add(_bv2.set(0,-.9,0))),el=document.createElement('div');el.className='col';el.innerHTML='<i>👆</i>';el.style.left=h.x+'px';el.style.top=h.y+'px';el.style.fontSize='calc(var(--u)*56)';
   el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();audioInit();if(BATH&&BATH.phase==='ready')startRinse()});
-  stage.appendChild(el);BATH.shower=el;
+  stage.appendChild(el);BATH.hint={x:h.x,y:h.y,el};
 }
 function startRinse(){
-  const B=BATH;B.phase='rinse';B.rinseT=1.7;sfx('splash');setExpr('laugh',1800);jump(5);giggle();
-  if(B.shower){const s=B.shower;s.style.opacity=0;setTimeout(()=>s.remove(),300)}
-  for(const f of B.foam){f.el.style.transition='opacity 1.4s,transform 1.4s';f.el.style.opacity=0;f.el.style.transform='translate(-50%,-30%) scale(1.3)'}
+  const B=BATH;B.phase='rinse';B.rinseT=3.0;B.sndT=0;sfx('splash');setExpr('laugh',3200);jump(5);giggle();
+  if(B.hint){const s=B.hint.el;s.style.opacity=0;setTimeout(()=>s.remove(),300);B.hint=null}
   bathMsg();
 }
 function bathUpdate(dt){
-  const B=BATH,u=cw/540;
-  for(const t of B.dirt.concat(B.foam)){const a=anchor(t.an);t.el.style.left=(a.x+t.dx*u)+'px';t.el.style.top=(a.y+t.dy*u)+'px'}
-  if(B.phase==='rinse'){B.rinseT-=dt;B.dropT-=dt;
-    if(B.dropT<=0){B.dropT=.09;fx('💧',2,{x:cw*(.3+Math.random()*.4),y:ch*.22},.8);if(Math.random()<.4)sfx('scrub')}
-    if(B.rinseT<=0)finishBath()}
+  const B=BATH;if(B.phase==='enter')return;
+  const u=cw/540,el=3-B.rinseT;
+  if(B.phase==='rinse'){B.rinseT-=dt;B.sndT-=dt;B.dropT-=dt;
+    B.flow=ss(0,.35,el)*(1-ss(2.65,3.0,el));
+    if(B.sndT<=0){B.sndT=.42;sfx('shower')}
+    if(B.dropT<=0){B.dropT=.12;fx(Math.random()<.5?'💧':'🫧',1,'head',.9)}
+    if(B.flow>.3&&Math.random()<.1)kick('roll',now()%2?1.2:-1.2);
+    bathMsg()}
+  const amounts=[];
+  for(const t of B.spots){spotScreen(t);amounts.push(t.hp);
+    // lather grows as the dirt is rubbed away; the water sweeps it off from the top down
+    let op=(1-t.hp)*.96;if(B.phase==='rinse')op*=1-clamp((el-.35-(t.sy/ch)*1.1)/.8,0,1);
+    const sz=t.rpx*2.5*(.7+.3*(1-t.hp));t.el.style.width=t.el.style.height=sz+'px';t.el.style.left=t.sx+'px';t.el.style.top=t.sy+'px';t.el.style.opacity=op}
+  setDirt(B.spots.map(t=>t.spot),amounts);
+  void u;
+  if(B.phase==='rinse'&&B.rinseT<=0)finishBath();
 }
 function finishBath(){
   const B=BATH,coins=5+Math.round(B.total/2);
@@ -543,8 +569,10 @@ function finishBath(){
   gEnd.style.display='block';save();
 }
 function endBath(){
-  if(!BATH)return;for(const t of BATH.dirt.concat(BATH.foam))t.el.remove();if(BATH.shower)BATH.shower.remove();
-  BATH=null;gHud.style.display='none';bbarEl.style.display='none';
+  if(!BATH)return;const B=BATH;for(const t of B.spots)t.el.remove();if(B.hint)B.hint.el.remove();
+  BATH=null;setDirt(null);gHud.style.display='none';bbarEl.style.display='none';
+  const back=()=>{if(BATH)return;ROOM.forEach(o=>o.visible=true);BR.group.visible=false;setGarments(true)};
+  if(B.phase==='enter')back();else fadeTo(back);          // back to the bedroom, dressed again
 }
 
 /* ================= 出门玩 outings ================= */
@@ -619,6 +647,7 @@ function outUpdate(dt){
 const SAVE_CH='naiwa3d-char';const charBtn=$('#charbtn'),charPick=$('#charpick');
 function setChar(name,quiet){
   if(name===CUR&&!quiet)return;
+  if(BATH)endBath(true);
   const next=CH[name]||FRG;
   for(const k in CH){const g=CH[k].group;g.visible=CH[k]===next;g.position.set(0,0,0);g.rotation.set(0,0,0);g.scale.set(1,1,1)}
   CUR=name;FR=next;frog=next.group;UN=next.uniforms;hitMeshes=next.colliders;
@@ -639,8 +668,8 @@ $('#start').addEventListener('pointerdown',e=>{e.preventDefault();audioInit();$(
 /* ================= main update ================= */
 let T=0,idleT=rnd(5,9),zT=0,night=S.sleeping?1:0,eyeClose=0,lie=S.sleeping?1:0;
 /* lying on the bed: [half the body length, half the body thickness] per character (the body is rotated 90° about its feet, head to the pillow) */
-const BASE={egg:.82,poop:.8,mouse:.64,cat:.7,fish:.82},SHK={egg:[.85,.85],poop:[1.55,1.9],mouse:[.8,.8],cat:[1.1,1.4],fish:[.9,.9]};
-const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.82],fish:[1.8,.8,.7],cat:[.3,0,.62],mouse:[1.9,1.15,.75],poop:[1.6,1.45,.6]}; // + a little scale so wide bodies fit the bed
+const BASE={egg:.82,poop:.8,mouse:.64,cat:.7,fish:.82,prawn:.95,corn:.85},SHK={egg:[.85,.85],poop:[1.55,1.9],mouse:[.8,.8],cat:[1.1,1.4],fish:[.9,.9],prawn:[1.2,1.3],corn:[.9,.9]};
+const LIE={frog:[1.55,.8,1],egg:[1.35,1.0,.82],fish:[1.8,.8,.7],cat:[.3,0,.62],prawn:[.2,0,.7],corn:[1.9,.9,.62],mouse:[1.9,1.15,.75],poop:[1.6,1.45,.6]}; // + a little scale so wide bodies fit the bed
 const sm=(cur,tgt,sp,dt)=>cur+(tgt-cur)*(1-Math.exp(-sp*dt));
 
 function update(dt){
@@ -664,7 +693,7 @@ function update(dt){
   if(OUT)outUpdate(dt);
   if(BATH)bathUpdate(dt);
   if(started&&!BATH)S.clean=clamp(S.clean-dt*.03*(S.sleeping?.3:1),0,100);
-  bathK=sm(bathK,BATH?1:0,5,dt);BATHO.update(T,bathK);
+  bathK=sm(bathK,BATH?1:0,5,dt);BATHO.update(T,bathK);camera.position.y=2.5+.9*bathK;LOOK.y=1.45+.9*bathK;camera.lookAt(LOOK);   // the bathroom view is raised so the shower head clears the HUDBR.update(T,BATH?BATH.flow:0);
 
   // expression targets
   const E=EX[curExpr()];
@@ -712,12 +741,12 @@ function update(dt){
   const tilt=A.tilt+shake*.6+Math.sin(T*.7)*.01;
   frog.scale.set(1+sq*.45+A.puff*.3,1-sq*.5,1+sq*.45+A.puff*.3);
   const LB=LIE[CUR]||LIE.frog;
-  const base=BASE[CUR]||1,sL=base+eL*(LB[2]-base);   // total scale: 奶屎 is a big model, shown a bit smaller
-  const QUAD=CUR==='cat';   // the quadruped curls up on the bed with its body along it; the others lie on their backs
-  frog.position.y=J.y+ha*.08*pulse+eL*(BED.top+(QUAD?.03:LB[1]*sL))-.34*bathK;
+  const base=BASE[CUR]||1,sL=(base+eL*(LB[2]-base))*(1-.12*bathK);   // total scale: 奶屎 is a big model, shown a bit smaller
+  const QUAD=CUR==='cat'||CUR==='prawn';   // the quadruped curls up on the bed with its body along it; the others lie on their backs
+  frog.position.y=J.y+ha*.08*pulse+eL*(BED.top+(QUAD?(CUR==='prawn'?-.15:.03):LB[1]*sL))+.1*bathK;
   frog.rotation.z=(G?G.lean||0:0)+SP.roll.v*.08+shake+ha*.035*Math.sin(ph*.5)+(playT>0?Math.sin(T*8)*.08:0)+Math.sin(T*2.2)*.03*bathK;
   frog.rotation.y=((playT>0?Math.sin(T*3)*.5:0)+look.x*.12)*(1-eL);
-  if(QUAD)frog.rotation.y-=eL*Math.PI/2;else frog.rotation.z+=eL*Math.PI/2;frog.scale.multiplyScalar(sL);
+  if(QUAD)frog.rotation.y-=eL*(CUR==='prawn'?.95:Math.PI/2);else frog.rotation.z+=eL*Math.PI/2;frog.scale.multiplyScalar(sL);
   if(eL>.001||(!G&&(frog.position.x!==0||frog.position.z!==0))){frog.position.x=eL*(BED.cx+(QUAD?LB[0]:LB[0]*sL));frog.position.z=eL*(BED.z+.05)}
   // skeleton (supplied rigged model, driven with world-axis deltas)
   const sway=Math.sin(T*1.6)*.03;
@@ -735,7 +764,7 @@ function update(dt){
   night=sm(night,S.sleeping?1:0,3,dt);
   hemi.intensity=lerp(1.0,.55,night);key.intensity=lerp(2.3,.7,night);fill.intensity=lerp(.7,.2,night);rim.intensity=lerp(1.1,.5,night);
   key.color.setRGB(1,lerp(1,.8,night),lerp(1,1.2,night));
-  if(OUT)scene.background.setHex(OD.scenes[OUT.k].userData.bg);else scene.background.setRGB(lerp(1,.1,night),lerp(.85,.1,night)*lerp(1,1,0),lerp(.63,.3,night));
+  if(OUT)scene.background.setHex(OD.scenes[OUT.k].userData.bg);else if(BR.group.visible)scene.background.setHex(0xd9f1f6);else scene.background.setRGB(lerp(1,.1,night),lerp(.85,.1,night)*lerp(1,1,0),lerp(.63,.3,night));
   lampLight.intensity=OUT?0:lerp(6,0,night);lampMats[0].emissiveIntensity=lerp(.9,0,night);
   winNight.material.opacity=night;DEC.setNight(night,T);
   // zzz / bubble / toast / hud
